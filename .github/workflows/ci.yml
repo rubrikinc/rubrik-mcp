@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "37 7 * * *"        # nightly read-tier integration run
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: Unit tests (no credentials)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[test]"
+      - run: pytest tests/ -v -m "not integration and not write"
+
+  integration:
+    name: Integration tests (read-tier, live RSC)
+    # Only on the nightly schedule or a manual dispatch — never on PRs.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test]"
+      - name: Write service-account credential
+        env:
+          RSC_SERVICE_ACCOUNT_JSON: ${{ secrets.RSC_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$RSC_SERVICE_ACCOUNT_JSON" ]; then
+            echo "No RSC_SERVICE_ACCOUNT_JSON secret configured — integration tests will self-skip."
+            exit 0
+          fi
+          mkdir -p "$HOME/.config/rsc"
+          printf '%s' "$RSC_SERVICE_ACCOUNT_JSON" > "$HOME/.config/rsc/ci-sa.json"
+          chmod 600 "$HOME/.config/rsc/ci-sa.json"
+      - name: Run read-tier integration tests
+        env:
+          RSC_SERVICE_ACCOUNT_FILE: ${{ github.workspace }}/../.config/rsc/ci-sa.json
+        run: |
+          # Read tier only. Write tests stay gated behind RSC_ALLOW_WRITE_TESTS,
+          # which is intentionally NOT set in CI.
+          export RSC_SERVICE_ACCOUNT_FILE="$HOME/.config/rsc/ci-sa.json"
+          pytest tests/ -v -m "integration and not write"

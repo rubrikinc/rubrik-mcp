@@ -12,9 +12,18 @@ dependencies = [
     "rsc-client>=1.4.20260518",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rubrik"]
 
 [project.scripts]
 rubrik-mcp = "rubrik.server:main"
 rubrik-job-monitor = "rubrik.server:job_monitor_main"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: live-RSC tests; require RSC_SERVICE_ACCOUNT_FILE (self-skip otherwise)",
+    "write: mutating live-RSC tests; require a write SA + RSC_ALLOW_WRITE_TESTS=1 (self-skip otherwise)",
+]
