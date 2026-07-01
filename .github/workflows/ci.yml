@@ -23,6 +23,36 @@ jobs:
       - run: pip install -e ".[test]"
       - run: pytest tests/ -v -m "not integration and not write"
 
+  supply-chain:
+    name: Supply chain (locked install, audit, SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Verify uv.lock is in sync with pyproject.toml
+        # Fails if the lockfile has drifted from pyproject.toml.
+        run: uv lock --check
+      - name: Install from the locked, hash-pinned dependency set
+        # uv verifies each package against the per-package hashes in uv.lock;
+        # this is the hash-enforced, reproducible install path.
+        run: uv sync --locked --all-extras
+      - name: Audit dependencies for known vulnerabilities (report-only)
+        # Report-only for now. Current advisories are all in the mcp SDK's HTTP
+        # transport stack (starlette / uvicorn / python-multipart / pyjwt), which
+        # is unused by this stdio-only server, so the vulnerable code paths are
+        # not reachable. Remediation (dep overrides / mcp SDK bump) tracked
+        # separately; flip this to a hard gate once the HTTP-stack deps are bumped.
+        continue-on-error: true
+        run: uv run --with pip-audit pip-audit
+      - name: Generate CycloneDX SBOM
+        run: uv run --with cyclonedx-bom cyclonedx-py environment -o sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
   integration:
     name: Integration tests (read-tier, live RSC)
     # Only on the nightly schedule or a manual dispatch — never on PRs.
