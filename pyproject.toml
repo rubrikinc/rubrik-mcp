@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "MCP server for Rubrik Security Cloud"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp[cli]>=1.9",
+    "mcp[cli]==1.27.1",
     "rsc-client>=1.5.20260601",
 ]
 
