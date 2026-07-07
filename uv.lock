@@ -1098,7 +1098,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", extras = ["cli"], specifier = ">=1.9" },
+    { name = "mcp", extras = ["cli"], specifier = "==1.27.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "rsc-client", specifier = ">=1.5.20260601" },
 ]
