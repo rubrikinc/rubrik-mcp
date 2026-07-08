@@ -115,6 +115,17 @@ which rubrik
 # example: /Users/you/.venv/bin/rubrik
 ```
 
+### Hardened install (optional)
+
+The commands above install the pinned dependency set. For environments that require **install-time hash verification** — each package checked against a known-good cryptographic hash before it is installed — a hashed `requirements.txt` is published with each release. Install the verified dependency set first, then the package itself:
+
+```bash
+pip install --require-hashes -r requirements.txt
+pip install --no-deps rubrik-mcp
+```
+
+`requirements.txt` is generated from the locked, hash-pinned dependency set (`uv export`); `--require-hashes` makes pip refuse any package whose hash does not match, and `--no-deps` on the second step keeps the verified set untouched. This path is optional — the standard install above is sufficient for most users.
+
 ### Configure your MCP client
 
 **Claude Code:**
