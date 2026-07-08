@@ -30,9 +30,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.7.13"
       - name: Verify uv.lock is in sync with pyproject.toml
         # Fails if the lockfile has drifted from pyproject.toml.
         run: uv lock --check
+      - name: Verify requirements.txt matches the lockfile
+        # The shipped hashed requirements.txt is what customers using
+        # --require-hashes verify against; it must not drift from uv.lock or
+        # they would be checking against stale hashes. Regenerate and fail on
+        # any difference.
+        run: |
+          uv export --format requirements-txt --no-emit-project --no-dev -o requirements.txt
+          git diff --exit-code requirements.txt
       - name: Install from the locked, hash-pinned dependency set
         # uv verifies each package against the per-package hashes in uv.lock;
         # this is the hash-enforced, reproducible install path.
