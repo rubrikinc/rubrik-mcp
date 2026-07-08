@@ -97,6 +97,35 @@ The server entry point is `src/rubrik/server.py`. Workflow files are plain JSON 
 
 ---
 
+## Gating policy
+
+Optional local allow/deny policy that bounds what the MCP will do, independent of the service account's RSC permissions (RBAC decides what the account *can* do; this decides what the MCP is *willing* to expose). Read from `~/.rubrik/policy.json` at startup; a secure-default template is seeded on first run (`0600`). Changes take effect on the next server start.
+
+```json
+{
+  "writes_enabled": true,
+  "write_tools": { "rsc_take_on_demand_snapshot": true, "rsc_assign_sla": true, "rsc_onboard_host": true },
+  "queries": { "allow_by_default": true, "allowed": [], "denied": [] },
+  "cross_mcp_egress": { "allowed": [] }
+}
+```
+
+| Key | Effect |
+| :-- | :-- |
+| `writes_enabled` | `false` hides all write tools from the agent. |
+| `write_tools.<name>` | Per-tool on/off (omitted = enabled). |
+| `queries.denied` | Read operation names to block, e.g. `"o365Teams"`. |
+| `queries.allow_by_default` / `allowed` | Set `false` + list `allowed` for strict allowlist mode. |
+| `cross_mcp_egress.allowed` | Allowlist of non-Rubrik MCP destinations a workflow may send data to. Empty = none. |
+
+Precedence for reads: `denied` > `allowed` > `allow_by_default`. Cross-MCP egress is allowlist-only (no default-allow).
+
+List items are JSON strings — **double-quoted and comma-separated**: `["o365Teams", "o365Mailboxes"]`. Invalid JSON makes the server refuse to start (fail-closed) and print the parse error; it never falls back to permissive.
+
+This is a startup configuration control, not a tamper-proof boundary — for a hard limit, use a least-privilege service account.
+
+---
+
 ## Community workflows
 
 Additional workflows contributed by the community — threat feed management, SLA operations, compliance reporting, and more — are available in the [rubrik-community](https://github.com/rubrikinc/rubrik-community) repository.
