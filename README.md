@@ -31,7 +31,7 @@ With an RSC service account, the agent can run live GraphQL queries against your
 
 Raw GraphQL execution is read-only. If you ask for a write operation not covered by a built-in tool, the server returns the attempted mutation and the agent generates a runnable code sample. A small number of write operations are available as dedicated built-in tools: on-demand snapshots (`rsc_take_on_demand_snapshot`), host onboarding (`rsc_onboard_host`), and SLA assignment (`rsc_assign_sla`). For everything else, the generated code approach gives you a runnable script with full control.
 
-> [!CAUTION]
+> [!WARNING]
 > **Write tools act on your Rubrik environment, and the LLM driving the MCP decides when to call them.** Any model can misread instructions or be influenced by untrusted data it reads (prompt injection) and invoke a write tool you did not intend — for example an SLA change via `rsc_assign_sla` that leaves data unprotected. As more write tools are added, this surface grows. The durable boundary is a **least-privilege, read-only service account**, which cannot perform any write operation regardless of which model you use or how the agent behaves. See [Service account role recommendations](#service-account-role-recommendations), and enable **Quorum Authorization** for destructive operations.
 
 ### Built-in tools
