@@ -20,7 +20,7 @@ from rubrik import server
 # --------------------------------------------------------------------------- #
 
 def test_absent_file_seeds_secure_default_template(tmp_path):
-    pf = tmp_path / "policy.json"
+    pf = tmp_path / "mcp-policy.json"
     p = policy.load(pf)
     assert pf.exists()
     assert oct(pf.stat().st_mode)[-3:] == "600"  # secret-ish perms
@@ -38,7 +38,7 @@ def test_absent_file_without_seed_returns_defaults(tmp_path):
 
 
 def test_partial_file_merges_onto_defaults(tmp_path):
-    pf = tmp_path / "policy.json"
+    pf = tmp_path / "mcp-policy.json"
     pf.write_text('{"writes_enabled": false}')
     p = policy.load(pf)
     assert not p.writes_enabled
@@ -46,7 +46,7 @@ def test_partial_file_merges_onto_defaults(tmp_path):
 
 
 def test_malformed_json_raises(tmp_path):
-    pf = tmp_path / "policy.json"
+    pf = tmp_path / "mcp-policy.json"
     pf.write_text("{ not valid json")
     with pytest.raises(policy.PolicyError):
         policy.load(pf)
@@ -60,7 +60,7 @@ def test_malformed_json_raises(tmp_path):
     '{"cross_mcp_egress": {"allowed": "slack"}}',
 ])
 def test_wrong_types_raise(tmp_path, body):
-    pf = tmp_path / "policy.json"
+    pf = tmp_path / "mcp-policy.json"
     pf.write_text(body)
     with pytest.raises(policy.PolicyError):
         policy.load(pf)
@@ -128,9 +128,16 @@ def test_any_writes_enabled_drives_startup_warning():
 
 @pytest.fixture
 def restore_policy():
+    # Save/restore both the policy and the tool registry: tests that assert on
+    # registration state (e.g. a disabled write tool absent from _TOOL_REGISTRY)
+    # are order-dependent otherwise, since main()/registration mutate the
+    # module-level registry.
     saved = server._POLICY
+    saved_registry = dict(server._TOOL_REGISTRY)
     yield
     server._POLICY = saved
+    server._TOOL_REGISTRY.clear()
+    server._TOOL_REGISTRY.update(saved_registry)
 
 
 def test_denied_query_blocked_before_rsc_call(restore_policy):

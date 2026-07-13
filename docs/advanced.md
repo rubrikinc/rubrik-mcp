@@ -99,16 +99,24 @@ The server entry point is `src/rubrik/server.py`. Workflow files are plain JSON 
 
 ## Gating policy
 
-Optional local allow/deny policy that bounds what the MCP will do, independent of the service account's RSC permissions (RBAC decides what the account *can* do; this decides what the MCP is *willing* to expose). Read from `~/.rubrik/policy.json` at startup; a secure-default template is seeded on first run (`0600`). Changes take effect on the next server start.
+Optional local allow/deny policy that bounds what the MCP will do, independent of the service account's RSC permissions (RBAC decides what the account *can* do; this decides what the MCP is *willing* to expose). Read from `~/.rubrik/mcp-policy.json` at startup; a secure-default template is seeded on first run (`0600`). Changes take effect on the next server start.
+
+This is the template seeded on first run — every write tool is listed so you can see the full set and toggle each `true`/`false`:
 
 ```json
 {
   "writes_enabled": true,
-  "write_tools": { "rsc_take_on_demand_snapshot": true, "rsc_assign_sla": true, "rsc_onboard_host": true },
+  "write_tools": {
+    "rsc_take_on_demand_snapshot": true,
+    "rsc_assign_sla": true,
+    "rsc_onboard_host": true
+  },
   "queries": { "allow_by_default": true, "allowed": [], "denied": [] },
   "cross_mcp_egress": { "allowed": [] }
 }
 ```
+
+`write_tools` is a **sparse override map**, so you don't *have* to keep every tool listed — any tool you omit stays enabled. For example, `"write_tools": { "rsc_assign_sla": false }` disables only that one and leaves the rest on. The seeded file enumerates all of them purely for discoverability.
 
 | Key | Effect |
 | :-- | :-- |

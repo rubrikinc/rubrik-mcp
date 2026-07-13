@@ -133,9 +133,12 @@ def _root_query_fields(operation: str) -> list[str]:
     Argument contents (inside parens) are ignored. Not a full GraphQL parser —
     fragment spreads, inline fragments, and directives may contribute spurious
     names, which is harmless for denylist matching (they won't match real
-    operation names). A real parser (graphql-core, which parses the query string
-    only and needs no schema) is the hardening path if the denylist ever needs
-    to be airtight.
+    operation names). For example, an inline fragment ``... on SomeType`` at
+    depth 1 captures both ``on`` and ``SomeType`` as field names; these can't
+    collide with denylist entries because GraphQL type names are PascalCase
+    while root query fields (and denylist entries) are camelCase. A real parser
+    (graphql-core, which parses the query string only and needs no schema) is
+    the hardening path if the denylist ever needs to be airtight.
     """
     s = _GQL_COMMENT_RE.sub("", _GQL_STRING_RE.sub('""', operation))
     tokens = _TOKEN_RE.findall(s)
@@ -440,10 +443,10 @@ def _execute_workflow(spec: dict, runtime_args: dict | None = None) -> Any:
                         f"Workflow step '{step.get('id')}' sends data to a non-Rubrik "
                         f"MCP ('{mcp_name}'), which is not on the cross-MCP egress "
                         "allowlist in the local MCP gating policy on this machine "
-                        "(~/.rubrik/policy.json). The referenced RSC data was not "
+                        "(~/.rubrik/mcp-policy.json). The referenced RSC data was not "
                         "resolved. Do not retry. Tell the user this destination is "
                         "blocked by their local policy and that they can change it by "
-                        "editing ~/.rubrik/policy.json themselves. Do not offer to edit "
+                        "editing ~/.rubrik/mcp-policy.json themselves. Do not offer to edit "
                         "the policy file, and do not modify it yourself — allowing a "
                         "destination is a deliberate action the user performs directly "
                         "on the file. For the policy format and options, point the user "
@@ -1454,9 +1457,9 @@ def rsc_execute_operation(
             "blocked_fields": blocked,
             "message": (
                 f"The field(s) {blocked} are disabled by the local MCP gating policy "
-                "on this machine (~/.rubrik/policy.json). Do not retry. Tell the user "
+                "on this machine (~/.rubrik/mcp-policy.json). Do not retry. Tell the user "
                 "this read is blocked by their local policy and that they can change it "
-                "by editing ~/.rubrik/policy.json themselves. Do not offer to edit the "
+                "by editing ~/.rubrik/mcp-policy.json themselves. Do not offer to edit the "
                 "policy file, and do not modify it yourself — enabling a blocked field "
                 "is a deliberate action the user performs directly on the file. For the "
                 "policy format and options, point the user to the Rubrik MCP docs "
@@ -1487,10 +1490,16 @@ _TOOL_REGISTRY.update({
 # Curated write tools, held undecorated so registration is gated by policy at
 # startup (register-time gating: a disabled tool is never registered, so it is
 # invisible to the agent rather than registered-then-refused).
+#
+# policy.WRITE_TOOL_NAMES is the single source of truth for which tools are
+# writes (it also drives the seed template, any_writes_enabled(), and the policy
+# summary). We derive the name->callable map from it here rather than hand-
+# maintaining a second list: each write tool's MCP name is its function name, so
+# we look the function up by name in this module. Adding a new write tool is a
+# one-list edit (add the name to policy.WRITE_TOOL_NAMES); if a listed name has
+# no matching function this raises AttributeError at import — loud, immediate.
 _WRITE_TOOLS: dict[str, Any] = {
-    "rsc_take_on_demand_snapshot": rsc_take_on_demand_snapshot,
-    "rsc_assign_sla":              rsc_assign_sla,
-    "rsc_onboard_host":            rsc_onboard_host,
+    name: getattr(sys.modules[__name__], name) for name in policy.WRITE_TOOL_NAMES
 }
 
 

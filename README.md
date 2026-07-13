@@ -244,4 +244,4 @@ Additional community-contributed workflows — threat feed management, SLA opera
 
 ## Further reading
 
-For the full built-in tools reference, architecture diagram, the local gating policy (`~/.rubrik/policy.json`), and development setup, see [docs/advanced.md](docs/advanced.md).
+For the full built-in tools reference, architecture diagram, the local gating policy (`~/.rubrik/mcp-policy.json`), and development setup, see [docs/advanced.md](docs/advanced.md).

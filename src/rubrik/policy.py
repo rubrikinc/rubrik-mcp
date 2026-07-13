@@ -1,6 +1,6 @@
 """Allow/deny gating policy for the Rubrik MCP server.
 
-Loaded from ``~/.rubrik/policy.json``. This is an MCP-layer control that
+Loaded from ``~/.rubrik/mcp-policy.json``. This is an MCP-layer control that
 complements RSC's server-side RBAC: RBAC bounds what the configured service
 account *can* do; this policy bounds what the MCP server *will* do, independent
 of the service account's role.
@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-POLICY_PATH = Path.home() / ".rubrik" / "policy.json"
+POLICY_PATH = Path.home() / ".rubrik" / "mcp-policy.json"
 
 # Curated write tools known to the server. Listed here so the seed template is
 # self-documenting and an operator sees every write tool they can toggle.
@@ -143,39 +144,40 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate(data: dict[str, Any]) -> None:
-    def err(msg: str) -> None:
-        raise PolicyError(msg)
-
     if not isinstance(data.get("writes_enabled"), bool):
-        err("'writes_enabled' must be a boolean")
+        raise PolicyError("'writes_enabled' must be a boolean")
 
     wt = data.get("write_tools")
     if not isinstance(wt, dict) or not all(isinstance(v, bool) for v in wt.values()):
-        err("'write_tools' must be an object mapping tool_name -> boolean")
+        raise PolicyError("'write_tools' must be an object mapping tool_name -> boolean")
 
     q = data.get("queries")
     if not isinstance(q, dict):
-        err("'queries' must be an object")
+        raise PolicyError("'queries' must be an object")
     if not isinstance(q.get("allow_by_default"), bool):
-        err("'queries.allow_by_default' must be a boolean")
+        raise PolicyError("'queries.allow_by_default' must be a boolean")
     for key in ("allowed", "denied"):
         val = q.get(key)
         if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
-            err(f"'queries.{key}' must be a list of strings")
+            raise PolicyError(f"'queries.{key}' must be a list of strings")
 
     ce = data.get("cross_mcp_egress")
     if not isinstance(ce, dict):
-        err("'cross_mcp_egress' must be an object")
+        raise PolicyError("'cross_mcp_egress' must be an object")
     allowed = ce.get("allowed")
     if not isinstance(allowed, list) or not all(isinstance(x, str) for x in allowed):
-        err("'cross_mcp_egress.allowed' must be a list of strings")
+        raise PolicyError("'cross_mcp_egress.allowed' must be a list of strings")
 
 
 def _seed(path: Path) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     seed = {"_comment": _SEED_COMMENT, **default_data()}
-    path.write_text(json.dumps(seed, indent=2) + "\n")
-    path.chmod(0o600)
+    # Create with 0o600 atomically: opening with the mode up front avoids the
+    # TOCTOU window a write-then-chmod leaves, during which another process
+    # could read the file at the default umask.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(seed, indent=2) + "\n")
     print(f"[rubrik] seeded default gating policy at {path}", file=sys.stderr, flush=True)
 
 
@@ -192,7 +194,7 @@ def load(path: Path = POLICY_PATH, *, seed_if_absent: bool = True) -> Policy:
 
     try:
         raw = json.loads(path.read_text())
-    except Exception as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise PolicyError(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise PolicyError("policy root must be a JSON object")
