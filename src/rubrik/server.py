@@ -1528,7 +1528,7 @@ _EXECUTE_OPERATION_DESCRIPTION = (
     "Args:\n"
     "    operation: A complete GraphQL query string on a single line, e.g.:\n"
     "        \"query { accountId }\"\n"
-    "        \"query ListSLAs($first: Int) { slaDomains(first: $first) { nodes { id name } } }\"\n"
+    "        \"query ListSLAs($after: String) { slaDomains(after: $after) { count nodes { id name } pageInfo { hasNextPage endCursor } } }\"\n"
     "    variables: Optional dict of variable values for parameterized operations.\n\n"
     "Returns:\n"
     "    The raw JSON response from the RSC GraphQL API (data + errors if any).\n"
