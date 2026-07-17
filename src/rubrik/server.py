@@ -71,6 +71,31 @@ def _get_policy() -> policy.Policy:
 # Full path to the rsc-job-monitor CLI (same bin dir as the running interpreter)
 _RSC_JOB_MONITOR = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "rubrik-job-monitor")
 
+# Default cap on records auto-paginated per read, to bound latency and token
+# blow-up on very large connections. Even a correctly-wired query over a
+# connection with millions of records would otherwise paginate unbounded and
+# time out. Callers that pass an explicit `limit` use that as the cap instead.
+# Override the default via the RUBRIK_MCP_MAX_RECORDS environment variable.
+def _resolve_max_records(default: int = 10000) -> int:
+    """Read RUBRIK_MCP_MAX_RECORDS; fall back to the default on unset, non-integer,
+    or non-positive values so a bad env var can't crash startup or disable the cap."""
+    raw = os.environ.get("RUBRIK_MCP_MAX_RECORDS")
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        print(
+            f"[rubrik] ignoring invalid RUBRIK_MCP_MAX_RECORDS={raw!r}; using {default}",
+            file=sys.stderr,
+        )
+        return default
+    return value if value > 0 else default
+
+
+_DEFAULT_MAX_RECORDS = _resolve_max_records()
+
+
 def _workflows_dir() -> Path:
     """Directory where user-defined workflows are persisted.
 
@@ -340,8 +365,23 @@ _BASE_INSTRUCTIONS = (
     "the query shape — guessing generates 400 errors and unnecessary API noise. "
     "When querying connection types (fields returning *Connection), always use 'nodes' "
     "rather than 'edges' unless per-object cursors are explicitly needed. "
-    "Do not specify 'first' in queries — omitting it returns up to 1000 results per page. "
-    "Use 'after' with the endCursor and check hasNextPage to paginate if there are more. "
+    "PAGINATION (important): rsc_execute_operation auto-paginates a connection for you, "
+    "but ONLY when you write the full pattern — declare '$after: String' as an operation "
+    "variable, pass 'after: $after' to the connection field, AND select "
+    "'pageInfo { hasNextPage endCursor }' next to 'nodes'. Wire all three together. "
+    "Never select 'pageInfo' without also declaring and passing '$after': the query "
+    "cannot advance and will loop on the first page indefinitely. If you omit 'pageInfo' "
+    "entirely you get only the first page (up to ~1000 records) — always also select "
+    "'count' and compare it to the number of nodes returned; if count is larger, you "
+    "truncated the results and must add the pagination pattern to get the rest. "
+    "Do not set 'first' unless you deliberately want a single capped page. "
+    "Correct template: query($after: String) { someConnection(after: $after) { count "
+    "nodes { ... } pageInfo { hasNextPage endCursor } } }. "
+    "Some operations instead return a 'data' list with 'hasMore' and 'nextCursor' "
+    "(rather than 'nodes'/'pageInfo'); these do NOT auto-paginate. If 'hasMore' is "
+    "true, re-call the operation passing the returned 'nextCursor' into its cursor "
+    "input until 'hasMore' is false. Prefer a '*Paginated' (nodes/pageInfo) "
+    "equivalent when one exists. "
     "rsc_execute_operation supports queries only. "
     "When rsc_execute_operation returns {\"error\": \"mutation_blocked\"}: "
     "(1) Extract the mutation name from the blocked_operation field. "
@@ -1017,7 +1057,11 @@ def rsc_get_workloads(
         variables["sortBy"] = sort_by
     if sort_order:
         variables["sortOrder"] = sort_order
-    raw = client.execute(_WORKLOAD_QUERY, variables=variables)
+    raw = client.execute(
+        _WORKLOAD_QUERY,
+        variables=variables,
+        max_records=limit if limit else _DEFAULT_MAX_RECORDS,
+    )
     nodes = _data_or_raise(raw, "snappableConnection").get("nodes", [])
     return nodes[:limit] if limit is not None else nodes
 
@@ -1358,7 +1402,11 @@ def rsc_get_events(
         "sortBy": "LAST_UPDATED",
         "sortOrder": "DESC",
     }
-    raw = client.execute(_EVENT_QUERY, variables=variables)
+    raw = client.execute(
+        _EVENT_QUERY,
+        variables=variables,
+        max_records=limit if limit else _DEFAULT_MAX_RECORDS,
+    )
     nodes = _data_or_raise(raw, "activitySeriesConnection").get("nodes", [])
     return nodes[:limit] if limit is not None else nodes
 
@@ -1475,7 +1523,7 @@ def rsc_execute_operation(
         }
 
     client = _mcp_rsc_client()
-    result = client.execute(operation, variables=variables)
+    result = client.execute(operation, variables=variables, max_records=_DEFAULT_MAX_RECORDS)
     # sgqlc returns a dict-like object; normalise to plain dict for MCP
     if hasattr(result, "__class__") and result.__class__.__name__ != "dict":
         result = json.loads(json.dumps(dict(result)))

@@ -207,8 +207,9 @@ def test_allowed_query_passes_gate(monkeypatch, restore_policy):
     called = {}
 
     class _FakeClient:
-        def execute(self, operation, variables=None):
+        def execute(self, operation, variables=None, max_records=None):
             called["op"] = operation
+            called["max_records"] = max_records
             return {"data": {"ok": True}}
 
     monkeypatch.setattr(server, "_mcp_rsc_client", lambda: _FakeClient())
