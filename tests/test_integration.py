@@ -17,19 +17,25 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_get_workloads_returns_list():
+def test_get_workloads_returns_structured():
     from rubrik.server import rsc_get_workloads
     result = rsc_get_workloads(limit=5)
-    assert isinstance(result, list)
-    if result:
-        item = result[0]
+    assert isinstance(result, dict)
+    assert {"count", "returned", "truncated", "workloads"} <= result.keys()
+    workloads = result["workloads"]
+    assert isinstance(workloads, list)
+    if workloads:
+        item = workloads[0]
         assert "fid" in item
         assert "objectType" in item
 
 
-def test_get_events_returns_list():
+def test_get_events_returns_structured():
     from rubrik.server import rsc_get_events
-    assert isinstance(rsc_get_events(last_hours=24, limit=5), list)
+    result = rsc_get_events(last_hours=24, limit=5)
+    assert isinstance(result, dict)
+    assert {"count", "returned", "truncated", "events"} <= result.keys()
+    assert isinstance(result["events"], list)
 
 
 def test_execute_operation_query_returns_data():

@@ -93,9 +93,6 @@ def _resolve_max_records(default: int = 10000) -> int:
     return value if value > 0 else default
 
 
-_DEFAULT_MAX_RECORDS = _resolve_max_records()
-
-
 def _workflows_dir() -> Path:
     """Directory where user-defined workflows are persisted.
 
@@ -369,12 +366,15 @@ _BASE_INSTRUCTIONS = (
     "but ONLY when you write the full pattern — declare '$after: String' as an operation "
     "variable, pass 'after: $after' to the connection field, AND select "
     "'pageInfo { hasNextPage endCursor }' next to 'nodes'. Wire all three together. "
-    "Never select 'pageInfo' without also declaring and passing '$after': the query "
-    "cannot advance and will loop on the first page indefinitely. If you omit 'pageInfo' "
-    "entirely you get only the first page (up to ~1000 records) — always also select "
-    "'count' and compare it to the number of nodes returned; if count is larger, you "
-    "truncated the results and must add the pagination pattern to get the rest. "
-    "Do not set 'first' unless you deliberately want a single capped page. "
+    "If you select 'pageInfo' but do NOT declare and pass '$after', the connection "
+    "cannot advance: the client detects the non-advancing cursor, stops, and returns "
+    "only the first page (it will not hang). If you omit 'pageInfo' entirely you also "
+    "get only the first page (up to ~1000 records). Either way, always select 'count' "
+    "and compare it to the number of nodes returned; if 'count' is larger, the result "
+    "is truncated — add the full pagination pattern to retrieve the rest. "
+    "Auto-pagination is bounded by a record cap, so very large connections may still "
+    "return a partial set with 'pageInfo.hasNextPage' true. "
+    "Set 'first' only when you deliberately want a single capped page. "
     "Correct template: query($after: String) { someConnection(after: $after) { count "
     "nodes { ... } pageInfo { hasNextPage endCursor } } }. "
     "Some operations instead return a 'data' list with 'hasMore' and 'nextCursor' "
@@ -383,11 +383,11 @@ _BASE_INSTRUCTIONS = (
     "input until 'hasMore' is false. Prefer a '*Paginated' (nodes/pageInfo) "
     "equivalent when one exists. "
     "COUNTS: for 'how many' questions, report the connection's 'count' field as the "
-    "total (select and return 'count'). Do NOT infer the total from the number of "
-    "'nodes'/'data' items returned — that is only the current page and is bounded by "
-    "the record cap, so counting items under-reports. If a built-in tool returns a "
-    "capped list without a count, run a 'count' query via rsc_execute_operation to "
-    "get the accurate total. "
+    "total — do NOT infer the total from the number of 'nodes'/'data' items returned, "
+    "which is only the current page and is bounded by the record cap. The built-in "
+    "rsc_get_workloads and rsc_get_events tools return a 'count' (the true total) "
+    "alongside a 'truncated' flag and the records; report that 'count', and if "
+    "'truncated' is true, note that the returned list is a partial sample. "
     "rsc_execute_operation supports queries only. "
     "When rsc_execute_operation returns {\"error\": \"mutation_blocked\"}: "
     "(1) Extract the mutation name from the blocked_operation field. "
@@ -936,6 +936,24 @@ def _data_or_raise(raw: Any, field: str) -> dict:
     return data.get(field) or {}
 
 
+def _paginated_result(conn: dict, records: list, key: str) -> dict:
+    """Build a structured result that surfaces truncation to the agent.
+
+    MCP tool results carry only the JSON return value — not the client's stderr
+    pagination warnings — so an incomplete result must be visible in the return
+    itself. `count` is the connection's true total (from its `count` field);
+    `truncated` is True when fewer records are returned than exist, because of
+    a caller `limit` or the server-side record cap.
+    """
+    total = conn.get("count")
+    return {
+        "count": total,
+        "returned": len(records),
+        "truncated": total is not None and total > len(records),
+        key: records,
+    }
+
+
 def _poll_once(client: RSCClient, job_id: str, object_type: str, cluster_id: str | None) -> dict:
     """Single status check. Returns {status, progress, done, raw}."""
     if object_type in _CLOUD_NATIVE_TYPES:
@@ -1014,7 +1032,7 @@ def rsc_get_workloads(
     sort_by: str | None = None,
     sort_order: str | None = None,
     limit: int | None = None,
-) -> list[dict]:
+) -> dict:
     """List workloads with protection, compliance, usage, and backup status.
 
     Each result includes:
@@ -1043,8 +1061,21 @@ def rsc_get_workloads(
         sort_by: Field to sort by, e.g. "MissedSnapshots", "Name",
             "LastSnapshot", "ComplianceStatus", "SlaDomainName".
         sort_order: "ASC" or "DESC".
-        limit: Maximum number of results to return. Omit for all results.
+        limit: Maximum number of results to return. Omit for all results
+            (bounded by the server-side record cap).
+
+    Returns:
+        A dict with:
+          - count: the true total matching the filter (the connection's `count`).
+          - returned: how many workloads are in this response.
+          - truncated: True when `returned` < `count` (more exist than returned,
+            because of `limit` or the record cap). Report `count` for
+            "how many" questions, not `len(workloads)`.
+          - workloads: the list of workload records.
     """
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+
     filter_input: dict[str, Any] = {}
     if object_type:
         filter_input["objectType"] = [object_type]
@@ -1066,10 +1097,13 @@ def rsc_get_workloads(
     raw = client.execute(
         _WORKLOAD_QUERY,
         variables=variables,
-        max_records=limit if limit else _DEFAULT_MAX_RECORDS,
+        max_records=limit if limit is not None else _resolve_max_records(),
     )
-    nodes = _data_or_raise(raw, "snappableConnection").get("nodes", [])
-    return nodes[:limit] if limit is not None else nodes
+    conn = _data_or_raise(raw, "snappableConnection")
+    nodes = conn.get("nodes", [])
+    if limit is not None:
+        nodes = nodes[:limit]
+    return _paginated_result(conn, nodes, "workloads")
 
 
 def rsc_take_on_demand_snapshot(
@@ -1361,7 +1395,7 @@ def rsc_get_events(
     activity_type: str | None = None,
     cluster_id: str | None = None,
     limit: int = 100,
-) -> list[dict]:
+) -> dict:
     """Get recent events and activity for workloads.
 
     Returns backup jobs, failures, anomalies, and other activity. Always
@@ -1385,7 +1419,17 @@ def rsc_get_events(
             RECOVERY, REPLICATION, ARCHIVE, ANOMALY, INDEX, LOG_BACKUP.
         cluster_id: Filter by Rubrik cluster UUID.
         limit: Maximum number of events to return. Default 100.
+
+    Returns:
+        A dict with `count` (true total matching the filter), `returned` (how
+        many events are in this response), `truncated` (True when more events
+        exist than were returned, because of `limit` or the record cap), and
+        `events` (the list of event records). Report `count` for "how many"
+        questions, not `len(events)`.
     """
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+
     after_dt = (datetime.now(timezone.utc) - timedelta(hours=last_hours)).isoformat()
 
     filters: dict[str, Any] = {"lastUpdatedTimeGt": after_dt}
@@ -1411,10 +1455,13 @@ def rsc_get_events(
     raw = client.execute(
         _EVENT_QUERY,
         variables=variables,
-        max_records=limit if limit else _DEFAULT_MAX_RECORDS,
+        max_records=limit if limit is not None else _resolve_max_records(),
     )
-    nodes = _data_or_raise(raw, "activitySeriesConnection").get("nodes", [])
-    return nodes[:limit] if limit is not None else nodes
+    conn = _data_or_raise(raw, "activitySeriesConnection")
+    nodes = conn.get("nodes", [])
+    if limit is not None:
+        nodes = nodes[:limit]
+    return _paginated_result(conn, nodes, "events")
 
 
 @mcp.tool(description=f"""Poll an RSC job until it completes and return the final status.
@@ -1529,7 +1576,7 @@ def rsc_execute_operation(
         }
 
     client = _mcp_rsc_client()
-    result = client.execute(operation, variables=variables, max_records=_DEFAULT_MAX_RECORDS)
+    result = client.execute(operation, variables=variables, max_records=_resolve_max_records())
     # sgqlc returns a dict-like object; normalise to plain dict for MCP
     if hasattr(result, "__class__") and result.__class__.__name__ != "dict":
         result = json.loads(json.dumps(dict(result)))
