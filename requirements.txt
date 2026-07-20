@@ -615,9 +615,9 @@ referencing==0.37.0 \
     # via
     #   jsonschema
     #   jsonschema-specifications
-requests==2.34.2 \
-    --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
-    --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
+requests==2.32.5 \
+    --hash=sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6 \
+    --hash=sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf
     # via rsc-client
 rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
@@ -742,9 +742,9 @@ rpds-py==0.30.0 \
     # via
     #   jsonschema
     #   referencing
-rsc-client==1.5.20260601 \
-    --hash=sha256:3418f1a06b03dd9e3fb5e095e2d7fa13868ff0665610d8768eb20c6f2803de65 \
-    --hash=sha256:781249d32420172fbe133b722b0e7be4a1e1435d12b914de748701cc82f3fc48
+rsc-client==1.6.20260601 \
+    --hash=sha256:064e47c9eb9d36b3677ad6ba3e2e49f60c7bb4f5076ce177e83faf5bbe0394d9 \
+    --hash=sha256:89774b07cf8dbc28759d996c93b99d8130e4f7d578726cb351d9eb9e38e011d9
     # via rubrik-mcp
 sgqlc==18 \
     --hash=sha256:7af53b5c1aab4602a98a36d6d32bd641e33f602b9b72468885f2505c59c536af \
