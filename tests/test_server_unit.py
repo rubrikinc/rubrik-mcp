@@ -133,11 +133,9 @@ def test_tool_surface():
 
     expected = {
         # Discovery
-        "rsc_search_operations",
-        "rsc_search_fields",
+        "rsc_search_schema",
         "rsc_describe_operation_full",
         "rsc_describe_type",
-        "rsc_list_types_matching",
         # Curated
         "rsc_get_workloads",
         "rsc_get_events",
@@ -153,12 +151,15 @@ def test_tool_surface():
         "rsc_delete_workflow",
     }
 
-    # Tools that were removed in 0.2.0 — must not reappear
+    # Tools removed in prior versions — must not reappear
     removed = {
         "rsc_describe_operation",
         "rsc_list_queries",
         "rsc_list_mutations",
         "rsc_list_types",
+        "rsc_search_operations",
+        "rsc_search_fields",
+        "rsc_list_types_matching",
     }
 
     assert names == expected, (
@@ -172,15 +173,15 @@ def test_tool_surface():
     )
 
 
-# ── 8. Discovery empty-search guards ─────────────────────────────────────────
+# ── 8. Discovery empty-search guard ──────────────────────────────────────────
 
-def test_search_operations_rejects_empty():
+def test_search_schema_rejects_empty():
     with pytest.raises(ValueError, match="must not be empty"):
-        server.rsc_search_operations("")
+        server.rsc_search_schema("")
 
-def test_search_fields_rejects_blank():
+def test_search_schema_rejects_blank():
     with pytest.raises(ValueError, match="must not be empty"):
-        server.rsc_search_fields("   ")
+        server.rsc_search_schema("   ")
 
 
 # ── 8. rsc_execute_operation gate ────────────────────────────────────────────

@@ -50,6 +50,11 @@ from rsc import (
     search_fields,
     search_operations,
 )
+try:
+    from rsc import search_types as _search_types
+    _SEARCH_TYPES_AVAILABLE = True
+except ImportError:
+    _SEARCH_TYPES_AVAILABLE = False
 
 from rubrik import policy
 
@@ -348,14 +353,9 @@ _BASE_INSTRUCTIONS = (
     "If you know the operation name, call rsc_describe_operation_full first — it returns "
     "the full argument signature and all input/return types in one shot, so you can "
     "build a correct query on the first try. "
-    "If you don't know the operation name, run rsc_search_operations AND rsc_search_fields "
-    "in parallel — they are complementary, not sequential. "
-    "rsc_search_operations finds directly-callable entry points by name and description. "
-    "rsc_search_fields finds concepts buried in the type graph that don't surface in "
-    "operation names — health status, session data, and other state fields often live on "
-    "nested types (e.g. ClusterNode.hardwareHealth for cluster hardware health, "
-    "Group.activeUsers for who is logged in). "
-    "Call rsc_describe_operation_full on the best match from either search — it returns "
+    "If you don't know the operation name, call rsc_search_schema — it searches operations, "
+    "fields, and types in one shot and returns the best candidate operations. "
+    "Call rsc_describe_operation_full on the best match — it returns "
     "the full argument signature and all input/enum types in one shot. "
     "Do not guess field names or attempt rsc_execute_operation without first verifying "
     "the query shape — guessing generates 400 errors and unnecessary API noise. "
@@ -611,65 +611,68 @@ def _load_workflows() -> None:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def rsc_search_operations(search: str, operation_type: str = "all") -> list[dict]:
-    """Search for RSC GraphQL operations by keyword.
+def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
+    """Search the full RSC GraphQL schema to find relevant operations.
+
+    Searches operation names/descriptions, field semantics, and type-level
+    vocabulary in one call and returns the best candidate operations ranked
+    by relevance. Use this whenever you need to find an operation and don't
+    already know its name.
+
+    The search runs three complementary indexes:
+    - Operation index: matches operation names and descriptions directly
+    - Field index: finds concepts buried in nested type fields (e.g.
+      "who is logged in" → Group.activeUsers → operations returning Group)
+    - Type index: matches domain concepts to operations via aggregate type
+      vocabulary (e.g. "cluster storage runway" → Cluster type → listing ops)
+
+    Results are deduplicated and merged; the same operation may be surfaced
+    by multiple indexes and will appear once with the highest score.
 
     Args:
-        search: Case-insensitive substring to match against operation names
-                and descriptions.
-        operation_type: Filter to "query", "mutation", or "all" (default).
+        search: Natural-language query or keywords describing what you want.
+            Must be non-empty. Use descriptive terms, not operation names.
+        operation_type: Filter results to "query", "mutation", or "all"
+            (default). Use "query" for read-only intent, "mutation" for
+            write intent.
 
     Returns:
-        List of matching operations with name, type, description, return_type.
+        Dict with:
+          - operations: list of dicts with name, type, description,
+            return_type, score, source (ops/fields/types)
+          - search: the search string used
     """
     if not search or not search.strip():
         raise ValueError("search must not be empty — provide a meaningful query term")
-    return search_operations(search, operation_type)
 
+    seen: dict[str, dict] = {}
 
-@mcp.tool()
-def rsc_search_fields(search: str, limit: int = 10) -> list[dict]:
-    """Search the GraphQL schema for FIELDS (not operations) matching the query.
+    # 1. Operation-level search
+    for r in search_operations(search, operation_type):
+        name = r["name"]
+        if name not in seen or r["score"] > seen[name]["score"]:
+            seen[name] = {**r, "source": "ops"}
 
-    Use when the semantic you are looking for likely lives on a field nested
-    inside a return type rather than on an operation name or description.
-    rsc_search_operations finds entry points (directly callable); this tool
-    finds concepts buried in the type graph that still need to be traced back
-    to an operation. Common cases where field search wins:
+    # 2. Field-level search — resolve field → type → operations
+    for fr in search_fields(search, limit=10):
+        type_name = fr.get("type", "")
+        for candidate in [type_name, type_name + "Connection", type_name + "Summary"]:
+            for op in search_operations(candidate, operation_type):
+                name = op["name"]
+                if op["score"] > 0 and (name not in seen or op["score"] > seen[name]["score"]):
+                    seen[name] = {**op, "source": "fields"}
 
-      - "logged in" -> Group.activeUsers (the canonical "who's logged in" answer
-        — a field nested inside the Group type, invisible to operation search)
-      - "cluster needs upgrade" -> Cluster.cdmUpgradeInfo (the right field for
-        upgrade reasoning, on a Cluster returned by clusterConnection)
-      - "sensitive data exposed" -> DataGovViolationDetails.violatedSensitiveHits
-      - "churn" or "ingest rate" -> fields on Snappable not surfaced by operation search
+    # 3. Type-level search (available when rsc-client >= types-bm25 version)
+    if _SEARCH_TYPES_AVAILABLE:
+        for tr in _search_types(search):
+            for op_name in tr.get("ops", []):
+                if op_name not in seen:
+                    ops = search_operations(op_name, operation_type)
+                    if ops:
+                        seen[op_name] = {**ops[0], "source": "types", "score": tr["score"]}
 
-    Once you have a relevant (type, field) hit, find an operation whose return
-    type chain contains that type — use rsc_search_operations or
-    rsc_list_types_matching to follow the trail.
-
-    DO NOT use this tool if you already know the type name — call
-    rsc_describe_type instead. This tool is for semantic discovery when you
-    don't know where in the schema a concept lives.
-
-    The search argument MUST be a meaningful natural-language phrase or
-    keywords describing the concept you are looking for (e.g. "churn daily
-    change rate backup", "sensitive data hits policy object"). An empty or
-    blank search is not allowed and will raise an error.
-
-    Args:
-        search: Natural-language keywords describing the concept to find.
-            Must be non-empty. Use descriptive terms, not type/field names
-            you already know.
-        limit: Maximum number of results (default 10).
-
-    Returns:
-        List of dicts with: type (owning type name), field (field name),
-        description (field description, may be empty), score (BM25 relevance).
-    """
-    if not search or not search.strip():
-        raise ValueError("search must not be empty — provide a meaningful query term")
-    return search_fields(search, limit=limit)
+    results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:10]
+    return {"operations": results, "search": search}
 
 
 @mcp.tool()
@@ -780,18 +783,6 @@ def rsc_describe_operation_full(name: str, operation_type: str, depth: int = 2) 
     return op
 
 
-@mcp.tool()
-def rsc_list_types_matching(search: str) -> list[str]:
-    """Filter RSC GraphQL type names by substring.
-
-    Args:
-        search: Case-insensitive substring to match against type names.
-
-    Returns:
-        List of matching type names.
-    """
-    search_lower = search.lower()
-    return [t for t in list_types() if search_lower in t.lower()]
 
 
 # ---------------------------------------------------------------------------
