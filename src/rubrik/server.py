@@ -1554,6 +1554,170 @@ def rsc_get_events(
     return _paginated_result(conn, nodes, "events")
 
 
+_CLUSTER_FIELDS = (
+    "id name status version type productType lastConnectionTime estimatedRunway isHealthy "
+    "clusterNodeConnection { count } "
+    "metric { totalCapacity usedCapacity availableCapacity }"
+)
+_CLUSTER_QUERY = (
+    "query GetClusters($filter: ClusterFilterInput, $after: String, "
+    "$sortBy: ClusterSortByEnum, $sortOrder: SortOrder) { "
+    "allClusterConnection(filter: $filter, after: $after, "
+    "sortBy: $sortBy, sortOrder: $sortOrder) { "
+    f"count nodes {{ {_CLUSTER_FIELDS} }} pageInfo {{ hasNextPage endCursor }} }} }}"
+)
+
+
+@mcp.tool()
+def rsc_get_clusters(
+    name_contains: str | None = None,
+    status: str | None = None,
+    cluster_type: str | None = None,
+    limit: int = 20,
+) -> dict:
+    """List Rubrik CDM clusters registered in RSC. Use for any question about cluster
+    inventory, connection status (connected/disconnected/degraded), CDM version, storage
+    capacity, runway, sync health, node health, or hardware warnings.
+    Filters: name, connection status, cluster type.
+
+    Each result includes:
+      - Identity: id, name, version, type, productType
+      - Status: status (Connected/Disconnected/Initializing), isHealthy
+      - Capacity: metric.totalCapacity, usedCapacity, availableCapacity (bytes)
+      - Runway: estimatedRunway (days before storage is full)
+      - Nodes: clusterNodeConnection.count (number of nodes in the cluster)
+      - Timing: lastConnectionTime
+
+    Args:
+        name_contains: Filter by cluster name. Passed to the server-side name filter.
+        status: Connection status filter. One of: Connected, Disconnected, Initializing.
+        cluster_type: Cluster type filter. One of: Cloud, ExoCompute, OnPrem, Polaris,
+            Robo, Unknown.
+        limit: Maximum number of clusters to return. Default 20, max 100.
+
+    Returns:
+        A dict with:
+          - count: true total matching the filter (the connection's `count`).
+          - returned: how many clusters are in this response.
+          - truncated: True when returned < count (more exist than were returned).
+          - clusters: list of cluster records.
+    """
+    if limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+    limit = min(limit, 100)
+
+    filter_input: dict[str, Any] = {}
+    if name_contains:
+        filter_input["name"] = [name_contains]
+    if status:
+        filter_input["connectionState"] = [status]
+    if cluster_type:
+        filter_input["type"] = [cluster_type]
+
+    client = _mcp_rsc_client()
+    variables: dict[str, Any] = {"filter": filter_input or None}
+    raw = client.execute(
+        _CLUSTER_QUERY,
+        variables=variables,
+        max_records=limit,
+    )
+    conn = _data_or_raise(raw, "allClusterConnection")
+    nodes = conn.get("nodes", [])
+    nodes = nodes[:limit]
+    return _paginated_result(conn, nodes, "clusters")
+
+
+_SLA_FIELDS = (
+    "id name "
+    "... on GlobalSlaReply { "
+    "description protectedObjectCount isRetentionLockedSla retentionLockMode "
+    "baseFrequency { duration unit } "
+    "archivalSpecs { threshold thresholdUnit storageSetting { id name targetType } } "
+    "replicationSpecsV2 { cluster { id name } } "
+    "objectTypes "
+    "}"
+)
+_SLA_QUERY = (
+    "query GetSlaDomains($filter: [GlobalSlaFilterInput!], $after: String, "
+    "$sortBy: SlaQuerySortByField, $sortOrder: SortOrder) { "
+    "slaDomains(filter: $filter, after: $after, sortBy: $sortBy, sortOrder: $sortOrder, "
+    "shouldShowProtectedObjectCount: true) { "
+    f"count nodes {{ {_SLA_FIELDS} }} pageInfo {{ hasNextPage endCursor }} }} }}"
+)
+
+
+@mcp.tool()
+def rsc_get_sla_domains(
+    name_contains: str | None = None,
+    object_type: str | None = None,
+    cluster_id: str | None = None,
+    is_retention_locked: bool | None = None,
+    limit: int = 50,
+) -> dict:
+    """List SLA Domains (protection policies) configured in RSC. Use for any question
+    about protection policies — filter by name, protected workload type (including
+    Kubernetes), cluster, or retention lock status. Also use for: counting SLA policies,
+    finding which SLAs protect a specific workload type, identifying retention-locked SLAs,
+    or finding SLAs with specific replication or archival configurations.
+
+    Each result includes:
+      - Identity: id, name, description
+      - Object types: objectTypes (SlaObjectType enum values for workloads this SLA covers)
+      - Coverage: protectedObjectCount (number of workloads under this SLA)
+      - Retention lock: isRetentionLockedSla, retentionLockMode
+      - Base frequency: baseFrequency.duration + unit (primary backup schedule)
+      - Archival: archivalSpecs (target name, type, and frequency threshold)
+      - Replication: replicationSpecsV2 (destination cluster IDs and names)
+
+    Args:
+        name_contains: Filter by SLA name (server-side name filter).
+        object_type: Filter by protected workload type. Must be a SlaObjectType enum
+            value, e.g. "VSPHERE_OBJECT_TYPE", "K8S_OBJECT_TYPE",
+            "AWS_EC2_EBS_OBJECT_TYPE", "NUTANIX_OBJECT_TYPE".
+        cluster_id: Filter by cluster UUID — returns SLAs associated with that cluster.
+        is_retention_locked: When True, return only retention-locked SLAs. When False,
+            return only non-retention-locked SLAs. Omit to return all. Applied
+            client-side after fetching; `count` reflects the server-side total before
+            this filter.
+        limit: Maximum number of SLA domains to return. Default 50, max 200.
+
+    Returns:
+        A dict with:
+          - count: true total matching the server-side filter (before is_retention_locked).
+          - returned: how many SLA domains are in this response.
+          - truncated: True when returned < count.
+          - sla_domains: list of SLA domain records.
+    """
+    if limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+    limit = min(limit, 200)
+
+    filter_list: list[dict] = []
+    if name_contains:
+        filter_list.append({"field": "NAME", "text": name_contains})
+    if object_type:
+        filter_list.append({"field": "OBJECT_TYPE", "objectTypeList": [object_type]})
+    if cluster_id:
+        filter_list.append({"field": "CLUSTER_UUID", "textList": [cluster_id]})
+
+    client = _mcp_rsc_client()
+    variables: dict[str, Any] = {"filter": filter_list or None}
+    raw = client.execute(
+        _SLA_QUERY,
+        variables=variables,
+        max_records=limit,
+    )
+    conn = _data_or_raise(raw, "slaDomains")
+    nodes = conn.get("nodes", [])
+
+    # Client-side retention lock filter — no server-side equivalent in the schema.
+    if is_retention_locked is not None:
+        nodes = [n for n in nodes if bool(n.get("isRetentionLockedSla")) == is_retention_locked]
+
+    nodes = nodes[:limit]
+    return _paginated_result(conn, nodes, "sla_domains")
+
+
 @mcp.tool(description=f"""Poll an RSC job until it completes and return the final status.
 
 Handles all job types automatically based on objectType — no polling
@@ -1683,6 +1847,8 @@ _TOOL_REGISTRY.update({
     "rsc_execute_operation":       rsc_execute_operation,
     "rsc_get_workloads":           rsc_get_workloads,
     "rsc_get_events":              rsc_get_events,
+    "rsc_get_clusters":            rsc_get_clusters,
+    "rsc_get_sla_domains":         rsc_get_sla_domains,
     "rsc_wait_for_job":            rsc_wait_for_job,
 })
 
