@@ -151,25 +151,11 @@ def test_tool_surface():
         "rsc_delete_workflow",
     }
 
-    # Tools removed in prior versions — must not reappear
-    removed = {
-        "rsc_describe_operation",
-        "rsc_list_queries",
-        "rsc_list_mutations",
-        "rsc_list_types",
-        "rsc_search_operations",
-        "rsc_search_fields",
-        "rsc_list_types_matching",
-    }
-
     assert names == expected, (
         f"Tool surface changed.\n"
         f"  Unexpected tools present: {names - expected}\n"
         f"  Expected tools missing:   {expected - names}\n"
         "Update this test, bump the version, and update docs."
-    )
-    assert not (names & removed), (
-        f"Removed tools reappeared: {names & removed}"
     )
 
 
