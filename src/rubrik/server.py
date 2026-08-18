@@ -656,6 +656,8 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     # 2. Field-level search — resolve field → type → operations
     for fr in search_fields(search, limit=10):
         type_name = fr.get("type", "")
+        if not type_name:
+            continue
         for candidate in [type_name, type_name + "Connection", type_name + "Summary"]:
             for op in search_operations(candidate, operation_type):
                 name = op["name"]
@@ -666,10 +668,12 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     if _SEARCH_TYPES_AVAILABLE:
         for tr in _search_types(search):
             for op_name in tr.get("ops", []):
-                if op_name not in seen:
-                    ops = search_operations(op_name, operation_type)
-                    if ops:
-                        seen[op_name] = {**ops[0], "source": "types", "score": tr["score"]}
+                ops = search_operations(op_name, operation_type)
+                if ops:
+                    op = ops[0]
+                    name = op["name"]
+                    if name not in seen or op["score"] > seen[name]["score"]:
+                        seen[name] = {**op, "source": "types"}
 
     results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:10]
     return {"operations": results, "search": search}
@@ -1551,10 +1555,8 @@ _CLUSTER_FIELDS = (
     "metric { totalCapacity usedCapacity availableCapacity }"
 )
 _CLUSTER_QUERY = (
-    "query GetClusters($filter: ClusterFilterInput, $after: String, "
-    "$sortBy: ClusterSortByEnum, $sortOrder: SortOrder) { "
-    "allClusterConnection(filter: $filter, after: $after, "
-    "sortBy: $sortBy, sortOrder: $sortOrder) { "
+    "query GetClusters($filter: ClusterFilterInput, $after: String) { "
+    "allClusterConnection(filter: $filter, after: $after) { "
     f"count nodes {{ {_CLUSTER_FIELDS} }} pageInfo {{ hasNextPage endCursor }} }} }}"
 )
 
@@ -1629,9 +1631,8 @@ _SLA_FIELDS = (
     "}"
 )
 _SLA_QUERY = (
-    "query GetSlaDomains($filter: [GlobalSlaFilterInput!], $after: String, "
-    "$sortBy: SlaQuerySortByField, $sortOrder: SortOrder) { "
-    "slaDomains(filter: $filter, after: $after, sortBy: $sortBy, sortOrder: $sortOrder, "
+    "query GetSlaDomains($filter: [GlobalSlaFilterInput!], $after: String) { "
+    "slaDomains(filter: $filter, after: $after, "
     "shouldShowProtectedObjectCount: true) { "
     f"count nodes {{ {_SLA_FIELDS} }} pageInfo {{ hasNextPage endCursor }} }} }}"
 )
@@ -1693,15 +1694,17 @@ def rsc_get_sla_domains(
 
     client = _mcp_rsc_client()
     variables: dict[str, Any] = {"filter": filter_list or None}
+    # When filtering by retention lock, paginate fully before filtering — the schema
+    # has no server-side equivalent, so capping first would hide matching records
+    # beyond the first page.
     raw = client.execute(
         _SLA_QUERY,
         variables=variables,
-        max_records=limit,
+        max_records=None if is_retention_locked is not None else limit,
     )
     conn = _data_or_raise(raw, "slaDomains")
     nodes = conn.get("nodes", [])
 
-    # Client-side retention lock filter — no server-side equivalent in the schema.
     if is_retention_locked is not None:
         nodes = [n for n in nodes if bool(n.get("isRetentionLockedSla")) == is_retention_locked]
 

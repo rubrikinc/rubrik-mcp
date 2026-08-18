@@ -170,6 +170,40 @@ def test_search_schema_rejects_blank():
         server.rsc_search_schema("   ")
 
 
+def test_search_schema_dedup_and_source_tagging():
+    """ops branch wins over types branch for same op; types branch uses op name as key."""
+    op_a = {"name": "clusters", "type": "query", "description": "list clusters", "return_type": "ClusterConnection", "score": 0.9}
+
+    def fake_search_ops(q, t):
+        if q.lower() in ("cluster", "clusters"):
+            return [op_a]
+        return []
+
+    fake_types = [{"ops": ["clusters"], "score": 0.3}]
+
+    with patch.object(server, "search_operations", side_effect=fake_search_ops):
+        with patch.object(server, "search_fields", return_value=[]):
+            with patch.object(server, "_SEARCH_TYPES_AVAILABLE", True):
+                with patch.object(server, "_search_types", return_value=fake_types, create=True):
+                    result = server.rsc_search_schema("cluster")
+
+    ops_by_name = {o["name"]: o for o in result["operations"]}
+    assert list(ops_by_name.keys()).count("clusters") == 1
+    assert ops_by_name["clusters"]["source"] == "ops"
+    assert ops_by_name["clusters"]["score"] == 0.9
+
+
+def test_search_schema_field_branch_skips_empty_type():
+    """Field results with empty type string must not trigger downstream searches."""
+    mock_search_ops = MagicMock(return_value=[])
+    with patch.object(server, "search_operations", mock_search_ops):
+        with patch.object(server, "search_fields", return_value=[{"type": "", "field": "orphan"}]):
+            with patch.object(server, "_SEARCH_TYPES_AVAILABLE", False):
+                server.rsc_search_schema("orphan")
+    # search_operations called once for the top-level ops search, never for the empty type
+    mock_search_ops.assert_called_once_with("orphan", "all")
+
+
 # ── 8. rsc_execute_operation gate ────────────────────────────────────────────
 
 def test_execute_operation_blocks_mutation_before_rsc():
@@ -424,3 +458,26 @@ def test_get_sla_domains_caps_limit_at_200():
     call_kwargs = inst.execute.call_args
     max_records = call_kwargs[1].get("max_records")
     assert max_records == 200
+
+
+def test_get_sla_domains_retention_lock_fetches_all_pages():
+    """is_retention_locked must not cap fetch — matches beyond limit would be missed."""
+    inst = MagicMock()
+    inst.execute.return_value = {
+        "data": {
+            "slaDomains": {
+                "count": 10,
+                "nodes": [
+                    {"id": f"s{i}", "name": f"SLA-{i}", "isRetentionLockedSla": i >= 8}
+                    for i in range(10)
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+    }
+    with patch.object(server, "RSCClient", return_value=inst):
+        result = server.rsc_get_sla_domains(is_retention_locked=True, limit=5)
+    call_kwargs = inst.execute.call_args
+    assert call_kwargs[1].get("max_records") is None
+    assert result["returned"] == 2
+    assert {d["id"] for d in result["sla_domains"]} == {"s8", "s9"}
