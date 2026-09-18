@@ -16,14 +16,15 @@ dependencies = [
 test = ["pytest>=7"]
 
 [tool.uv]
-# Security floors for transitive dependencies. These are constraints, not
-# dependencies: nothing here is imported by rubrik-mcp, so declaring them under
-# [project.dependencies] would misstate what this package actually uses. They
-# only stop the resolver from selecting a version with a known advisory.
+# Exact pins for transitive dependencies we need to control. These are
+# constraints, not dependencies: nothing here is imported by rubrik-mcp, so
+# declaring them under [project.dependencies] would misstate what this package
+# actually uses. Pinned exactly rather than floored, per the supply-chain
+# policy that every version be explicit and reviewed.
 constraint-dependencies = [
-    # CVE-2026-63374, CVE-2026-64847. Reaches us via httpx, mcp, starlette,
-    # and sse-starlette; mcp itself only requires anyio>=4.5.
-    "anyio>=4.14.2",
+    # CVE-2026-63374, CVE-2026-64847 (fixed in 4.14.2). Reaches us via httpx,
+    # mcp, starlette, and sse-starlette; mcp itself only requires anyio>=4.5.
+    "anyio==4.15.1",
 ]
 
 [tool.hatch.version]
