@@ -1,3 +1,3 @@
 """Rubrik MCP server package."""
 
-__version__ = "0.7.20260817"
+__version__ = "0.7.20260914"
