@@ -1,5 +1,7 @@
 [build-system]
-requires = ["hatchling"]
+# Pinned per policy: all direct dependencies carry an exact version,
+# including the build backend.
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -32,7 +34,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["pytest==9.1.1"]
 
 [tool.uv]
 # Exact pins for transitive dependencies we need to control. These are
