@@ -7,7 +7,25 @@ name = "rubrik-mcp"
 dynamic = ["version"]
 description = "MCP server for Rubrik Security Cloud"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [
+  { name = "Rubrik, Inc." },
+]
+keywords = ["rubrik", "rsc", "mcp", "model-context-protocol", "graphql", "security", "backup", "ai"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: System :: Archiving :: Backup",
+]
 dependencies = [
     "mcp[cli]==1.29.0",
     "rsc-client==1.7.20260914",
@@ -27,6 +45,12 @@ constraint-dependencies = [
     # mcp, starlette, and sse-starlette; mcp itself only requires anyio>=4.5.
     "anyio==4.15.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rubrikinc/rubrik-mcp"
+Repository = "https://github.com/rubrikinc/rubrik-mcp"
+Documentation = "https://developer.rubrik.com"
+"Bug Tracker" = "https://github.com/rubrikinc/rubrik-mcp/issues"
 
 [tool.hatch.version]
 path = "src/rubrik/__init__.py"
