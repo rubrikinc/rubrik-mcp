@@ -2,6 +2,12 @@
 
 An MCP server that connects AI assistants to the [Rubrik Security Cloud](https://www.rubrik.com/) GraphQL API.
 
+<!-- Ownership marker for the MCP Registry. It verifies that this PyPI package
+     belongs to the server named in server.json by looking for this string in
+     the published package description. Must match server.json's `name` exactly,
+     and must not be followed by punctuation. -->
+<!-- mcp-name: io.github.rubrikinc/rubrik-mcp -->
+
 ---
 
 ## What you can do

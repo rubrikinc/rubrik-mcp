@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "rubrik-mcp"
 dynamic = ["version"]
 description = "MCP server for Rubrik Security Cloud"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]==1.29.0",
