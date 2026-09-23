@@ -35,7 +35,7 @@ With an RSC service account, the agent can run live GraphQL queries against your
 - Trigger on-demand snapshots and poll until they complete
 - Register hosts and assign SLA domains
 
-Raw GraphQL execution is read-only. If you ask for a write operation not covered by a built-in tool, the server returns the attempted mutation and the agent generates a runnable code sample. A small number of write operations are available as dedicated built-in tools: on-demand snapshots (`rsc_take_on_demand_snapshot`), host onboarding (`rsc_onboard_host`), and SLA assignment (`rsc_assign_sla`). **These are disabled by default** — set `"writes_enabled": true` in the [gating policy](docs/advanced.md#gating-policy) to expose them. For everything else, the generated code approach gives you a runnable script with full control.
+Raw GraphQL execution is read-only. If you ask for a write operation not covered by a built-in tool, the server returns the attempted mutation and the agent generates a runnable code sample. A small number of write operations are available as dedicated built-in tools: on-demand snapshots (`rsc_take_on_demand_snapshot`), host onboarding (`rsc_onboard_host`), and SLA assignment (`rsc_assign_sla`). **These are disabled by default** — set `"writes_enabled": true` in the [gating policy](https://github.com/rubrikinc/rubrik-mcp/blob/main/docs/advanced.md#gating-policy) to expose them. For everything else, the generated code approach gives you a runnable script with full control.
 
 > [!WARNING]
 > **Write tools act on your Rubrik environment, and the LLM driving the MCP decides when to call them.** Any model can misread instructions or be influenced by untrusted data it reads (prompt injection) and invoke a write tool you did not intend — for example an SLA change via `rsc_assign_sla` that leaves data unprotected. As more write tools are added, this surface grows. They are disabled by default for that reason; enabling them is an explicit choice. The durable boundary is a **least-privilege, read-only service account**, which cannot perform any write operation regardless of which model you use or how the agent behaves. See [Service account role recommendations](#service-account-role-recommendations), and enable **Quorum Authorization** for destructive operations.
@@ -243,7 +243,7 @@ When you find yourself asking the same question repeatedly, save it:
 
 > "Save this as a workflow so I can reuse it."
 
-The AI calls `rsc_save_workflow`, which writes a JSON file to the MCP config directory's `workflows/` folder — `~/.rubrik/workflows/` by default, or under `$RUBRIK_MCP_CONFIG_DIR` when set (see [docs/docker.md](docs/docker.md) for the containerized case). On the next restart, that workflow is registered as a named MCP tool — a single call instead of multi-step schema discovery. Repeated operations use fewer tokens and respond faster.
+The AI calls `rsc_save_workflow`, which writes a JSON file to the MCP config directory's `workflows/` folder — `~/.rubrik/workflows/` by default, or under `$RUBRIK_MCP_CONFIG_DIR` when set (see [docs/docker.md](https://github.com/rubrikinc/rubrik-mcp/blob/main/docs/docker.md) for the containerized case). On the next restart, that workflow is registered as a named MCP tool — a single call instead of multi-step schema discovery. Repeated operations use fewer tokens and respond faster.
 
 Workflow files are plain JSON. Open them in any editor, adjust the query, change the defaults, or share them with your team.
 
@@ -261,4 +261,4 @@ Additional community-contributed workflows — threat feed management, SLA opera
 
 ## Further reading
 
-For the full built-in tools reference, architecture diagram, the local gating policy (`~/.rubrik/mcp-policy.json`, relocatable via `$RUBRIK_MCP_CONFIG_DIR`), and development setup, see [docs/advanced.md](docs/advanced.md). To run the server in a container, see [docs/docker.md](docs/docker.md).
+For the full built-in tools reference, architecture diagram, the local gating policy (`~/.rubrik/mcp-policy.json`, relocatable via `$RUBRIK_MCP_CONFIG_DIR`), and development setup, see [docs/advanced.md](https://github.com/rubrikinc/rubrik-mcp/blob/main/docs/advanced.md). To run the server in a container, see [docs/docker.md](https://github.com/rubrikinc/rubrik-mcp/blob/main/docs/docker.md).
