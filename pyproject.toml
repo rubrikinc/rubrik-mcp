@@ -9,7 +9,8 @@ name = "rubrik-mcp"
 dynamic = ["version"]
 description = "MCP server for Rubrik Security Cloud"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
   { name = "Rubrik, Inc." },
@@ -19,7 +20,6 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: System Administrators",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -33,7 +33,10 @@ dependencies = [
     "rsc-client==1.7.20260914",
 ]
 
-[project.optional-dependencies]
+# A dependency group, not an extra: groups are never written to the published
+# package metadata, so this exact pin binds our CI without forcing a pytest
+# version on anyone who installs rubrik-mcp.
+[dependency-groups]
 test = ["pytest==9.1.1"]
 
 [tool.uv]

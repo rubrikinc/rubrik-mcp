@@ -1098,7 +1098,7 @@ dependencies = [
     { name = "rsc-client" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 test = [
     { name = "pytest" },
 ]
@@ -1106,10 +1106,11 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = "==1.29.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = "==9.1.1" },
     { name = "rsc-client", specifier = "==1.7.20260914" },
 ]
-provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = "==9.1.1" }]
 
 [[package]]
 name = "sgqlc"
