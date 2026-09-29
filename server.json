@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.rubrikinc/rubrik-mcp",
+  "title": "Rubrik Security Cloud",
+  "description": "Connect AI assistants to the Rubrik Security Cloud GraphQL API to discover, query, and automate.",
+  "repository": {
+    "url": "https://github.com/rubrikinc/rubrik-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://developer.rubrik.com",
+  "version": "0.7.20260914",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "rubrik-mcp",
+      "version": "0.7.20260914",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "RSC_SERVICE_ACCOUNT_FILE",
+          "description": "Path to an RSC service account JSON file. Optional: discovery tools work without credentials.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RSC_URL",
+          "description": "RSC URL, e.g. https://example.my.rubrik.com. Alternative to a service account file.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RSC_CLIENT_ID",
+          "description": "Service account client ID. Use with RSC_URL and RSC_CLIENT_SECRET.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RSC_CLIENT_SECRET",
+          "description": "Service account client secret. Use with RSC_URL and RSC_CLIENT_ID.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "RUBRIK_MCP_CONFIG_DIR",
+          "description": "Directory for the gating policy and saved workflows. Defaults to ~/.rubrik.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

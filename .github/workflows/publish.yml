@@ -1,0 +1,102 @@
+name: Publish
+
+# Cut a release by pushing a tag that matches __version__, e.g.
+#   git tag v0.7.20260914 && git push origin v0.7.20260914
+#
+# Order matters: the MCP Registry only hosts metadata and verifies ownership
+# against the package already on PyPI, so PyPI must succeed first.
+#
+# No stored secrets. Both publishes use short-lived OIDC tokens:
+#   - PyPI: trusted publisher for this repo + workflow + the `pypi` environment
+#   - MCP Registry: `mcp-publisher login github-oidc`, which grants the
+#     io.github.rubrikinc/* namespace
+# The registry token can publish ANY server under io.github.rubrikinc, so both
+# environments should be restricted to `v*` tags in the repo settings.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.7.13"
+      - run: uv sync --locked --group test --python 3.12
+      - run: uv run --no-sync pytest tests/ -v -m "not integration and not write"
+      - name: Build wheel and sdist
+        run: uv build --out-dir dist
+      - name: Verify package metadata matches server.json and the tag
+        run: python3 .github/scripts/check_registry_metadata.py dist/*.whl --tag "${GITHUB_REF_NAME}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/rubrik-mcp/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+
+  registry:
+    name: Publish to MCP Registry
+    needs: pypi
+    runs-on: ubuntu-latest
+    environment:
+      name: mcp-registry
+      url: https://registry.modelcontextprotocol.io/v0/servers?search=io.github.rubrikinc/rubrik-mcp
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      MCP_PUBLISHER_VERSION: "1.8.1"
+      # From registry_1.8.1_checksums.txt on the release page.
+      MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher (pinned, checksum-verified)
+        run: |
+          curl -sSfL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Wait for PyPI to serve the new version
+        # The registry reads the description from PyPI's JSON API, which can
+        # lag the upload briefly.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for i in $(seq 1 30); do
+            if curl -sf "https://pypi.org/pypi/rubrik-mcp/${VERSION}/json" >/dev/null; then
+              echo "PyPI is serving rubrik-mcp ${VERSION}"; exit 0
+            fi
+            sleep 10
+          done
+          echo "rubrik-mcp ${VERSION} not visible on PyPI after 5 minutes" >&2; exit 1
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        run: ./mcp-publisher publish
