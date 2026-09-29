@@ -46,38 +46,23 @@ jobs:
         run: |
           uv export --format requirements-txt --no-emit-project --no-dev -o requirements.txt
           git diff --exit-code requirements.txt
-      - name: Verify the MCP Registry ownership marker survives into package metadata
+      - name: Verify package metadata matches server.json
         # The registry proves this PyPI package belongs to our server name by
-        # finding this string in the PUBLISHED package description, which comes
-        # from README.md via `readme` in pyproject.toml. Two ways it can break
-        # silently: someone tidies the HTML comment out of the README, or the
-        # `readme` declaration is dropped and the description goes empty again.
-        # Either is unrecoverable after an upload, since PyPI metadata is
-        # immutable per version. Check the built artifact, not the source file.
+        # finding `mcp-name: <server.json name>` in the PUBLISHED package
+        # description. Also checks that server.json's versions and identifier
+        # match the built package, since the version is bumped by hand. See the
+        # script for details; publish.yml runs the same check.
         run: |
           uv build --wheel --out-dir /tmp/marker-check
-          python3 - <<'EOF'
-          import glob, sys, zipfile
-          whl = sorted(glob.glob('/tmp/marker-check/*.whl'))[-1]
-          z = zipfile.ZipFile(whl)
-          meta = z.read([n for n in z.namelist() if n.endswith('METADATA')][0]).decode()
-          body = meta.partition('\n\n')[2]
-          marker = 'mcp-name: io.github.rubrikinc/rubrik-mcp'
-          if marker not in body:
-              sys.exit(
-                  f"MCP Registry marker missing from package metadata.\n"
-                  f"  expected: {marker}\n"
-                  f"  description length: {len(body.strip())} chars\n"
-                  f"Check that README.md still contains the marker comment and that "
-                  f"pyproject.toml still sets readme = \"README.md\"."
-              )
-          print(f"marker present; description is {len(body.strip()):,} chars")
-          EOF
+          python3 .github/scripts/check_registry_metadata.py /tmp/marker-check/*.whl
 
       - name: Install from the locked, hash-pinned dependency set
         # uv verifies each package against the per-package hashes in uv.lock;
         # this is the hash-enforced, reproducible install path.
-        run: uv sync --locked --all-extras
+        # --all-groups, not --all-extras: pytest lives in the `test` dependency
+        # group, so an extras-only install would leave it out of pip-audit and
+        # the SBOM.
+        run: uv sync --locked --all-groups
       - name: Audit dependencies for known vulnerabilities
         # Hard gate. mcp bumped to 1.29.0 and rsc-client to 1.7.20260817 cleared
         # all previously known HTTP-stack CVEs (starlette, pyjwt, python-multipart,

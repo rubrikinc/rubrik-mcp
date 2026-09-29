@@ -10,7 +10,10 @@ dynamic = ["version"]
 description = "MCP server for Rubrik Security Cloud"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+# NOTICE carries the third-party license notices for bundled dependencies
+# (mcp, rsc-client, and their transitive deps), so it ships alongside LICENSE
+# in every artifact, not just the repo.
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 authors = [
   { name = "Rubrik, Inc." },
@@ -62,6 +65,18 @@ path = "src/rubrik/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rubrik"]
+
+# Allowlist, not denylist: without this, hatch ships everything git tracks,
+# including repo tooling (CLAUDE.md, CI workflows, Dockerfile, uv.lock). An
+# allowlist also keeps new top-level files out by default. pyproject.toml and
+# the license-files above are always included, as is .gitignore (hatch
+# always ships it in sdists and ignores excludes for it).
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/README.md",
+]
 
 [project.scripts]
 rubrik-mcp = "rubrik.server:main"
