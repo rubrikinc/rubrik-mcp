@@ -43,7 +43,7 @@ export RSC_SERVICE_ACCOUNT_FILE=/path/to/service_account.json
 
 | Category | Auth required | Where defined |
 |----------|--------------|---------------|
-| Discovery | No | `server.py` — `rsc_search_operations`, `rsc_describe_*`, `rsc_list_*` |
+| Discovery | No | `server.py` — `rsc_search_schema`, `rsc_describe_*` |
 | Execution | Yes | `server.py` — `rsc_execute_operation`, `rsc_get_workloads`, `rsc_get_events`, etc. |
 | Workflows | Yes | `server.py` — `rsc_save_workflow`, `rsc_list_workflows`, `rsc_delete_workflow` |
 

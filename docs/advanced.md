@@ -12,11 +12,9 @@ These tools work entirely offline using a pre-built index of the RSC schema. No 
 
 | Tool | Description |
 |------|-------------|
-| `rsc_search_operations` | Find queries/mutations by keyword — run in parallel with `rsc_search_fields` |
-| `rsc_search_fields` | Find concepts by field semantics across the type graph — run in parallel with `rsc_search_operations` |
+| `rsc_search_schema` | Find the right query or mutation by keyword, field meaning, or type vocabulary in one call |
 | `rsc_describe_operation_full` | Operation signature with all input/enum types expanded inline |
 | `rsc_describe_type` | Fields/values for a GraphQL type |
-| `rsc_list_types_matching` | Filter type names by substring |
 
 ### Execution (credentials required)
 
@@ -25,6 +23,8 @@ These tools work entirely offline using a pre-built index of the RSC schema. No 
 | `rsc_execute_operation` | Run any raw GraphQL query (mutations are not supported — Claude generates Python code instead) |
 | `rsc_get_workloads` | List workloads with protection, compliance, usage, and backup status |
 | `rsc_get_events` | Get recent events and activity, always scoped to a time window |
+| `rsc_get_clusters` | List Rubrik clusters registered in RSC, with status, version, capacity, and runway |
+| `rsc_get_sla_domains` | List SLA Domains with base frequency, retention lock, archival, and replication settings |
 | `rsc_search_help` | Search KB articles, product documentation, and known issues by keyword |
 | `rsc_take_on_demand_snapshot` | Trigger an on-demand backup for a workload |
 | `rsc_wait_for_job` | Poll a backup job until it completes |

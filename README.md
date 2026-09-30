@@ -46,11 +46,9 @@ Raw GraphQL execution is read-only. If you ask for a write operation not covered
 
 | Tool | What it does |
 |------|-------------|
-| `rsc_search_operations` | Find queries and mutations by keyword — run in parallel with `rsc_search_fields` |
-| `rsc_search_fields` | Find concepts by field semantics across the type graph — run in parallel with `rsc_search_operations` |
+| `rsc_search_schema` | Find the right query or mutation by keyword, field meaning, or type vocabulary in one call |
 | `rsc_describe_operation_full` | Argument signature with all input/enum types expanded inline |
 | `rsc_describe_type` | Fields and values for a GraphQL type |
-| `rsc_list_types_matching` | Filter type names by substring |
 
 **Execution** — service account required
 
@@ -59,6 +57,8 @@ Raw GraphQL execution is read-only. If you ask for a write operation not covered
 | `rsc_execute_operation` | Run any raw GraphQL query (mutations generate code instead) |
 | `rsc_get_workloads` | Workloads with protection status, compliance, and backup history |
 | `rsc_get_events` | Recent events and activity, always time-scoped |
+| `rsc_get_clusters` | Rubrik clusters registered in RSC, with status, version, capacity, and runway |
+| `rsc_get_sla_domains` | SLA Domains with base frequency, retention lock, archival, and replication settings |
 | `rsc_search_help` | Search KB articles, product docs, and known issues by keyword |
 | `rsc_take_on_demand_snapshot` | Trigger a backup for a workload and return the job ID |
 | `rsc_wait_for_job` | Poll a job until completion |
@@ -247,15 +247,7 @@ The AI calls `rsc_save_workflow`, which writes a JSON file to the MCP config dir
 
 Workflow files are plain JSON. Open them in any editor, adjust the query, change the defaults, or share them with your team.
 
-**Starter workflows** (available on first run):
-
-| Workflow | Description |
-|----------|-------------|
-| `rsc_snapshot_and_wait` | Take an on-demand snapshot for a cloud-native workload and poll until it completes |
-| `rsc_protection_gaps` | Out-of-compliance workloads and recent backup failures in one combined call |
-| `rsc_find_and_snapshot` | Find a workload by name, snapshot it, and wait for completion |
-
-Additional community-contributed workflows — threat feed management, SLA operations, and more — are available in the [rubrik-community](https://github.com/rubrikinc/rubrik-community) repository. Copy any JSON file into the config directory's `workflows/` folder (`~/.config/rubrik-mcp/workflows/` by default, or under `$RUBRIK_MCP_CONFIG_DIR`) and restart your MCP client to install it.
+Community-contributed workflows (threat feed management, SLA operations, and more) are available in the [rubrik-community](https://github.com/rubrikinc/rubrik-community) repository. Copy any JSON file into the config directory's `workflows/` folder (`~/.config/rubrik-mcp/workflows/` by default, or under `$RUBRIK_MCP_CONFIG_DIR`) and restart your MCP client to install it.
 
 ---
 

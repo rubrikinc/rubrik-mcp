@@ -1366,7 +1366,7 @@ def rsc_assign_sla(
         raise ValueError(
             "sla_id is required when assign_type='protectWithSlaId'. "
             "Discover SLA Domain IDs via the slaDomains query "
-            "(use rsc_execute_operation or rsc_search_operations)."
+            "(use rsc_get_sla_domains or rsc_execute_operation)."
         )
 
     input_payload: dict[str, Any] = {
