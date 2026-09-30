@@ -1,6 +1,6 @@
 # Rubrik MCP
 
-An MCP server that connects AI assistants to the [Rubrik Security Cloud](https://www.rubrik.com/) GraphQL API.
+An MCP server that connects AI assistants to the [Rubrik Security Cloud](https://www.rubrik.com/) GraphQL API. It's built for Rubrik admins and teams automating against Rubrik, and runs locally (on your own workstation or on an agent's server) alongside the AI assistant that calls it.
 
 <!-- Ownership marker for the MCP Registry. It verifies that this PyPI package
      belongs to the server named in server.json by looking for this string in
