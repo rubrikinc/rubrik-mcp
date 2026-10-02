@@ -87,58 +87,56 @@ On the next restart, that tool appears alongside the built-in tools — a single
 
 ### Prerequisites
 
-- Python 3.10 or later
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (recommended), or Python 3.10 or later with pip
 - A Rubrik Security Cloud account with a service account (for execution tools only)
 
 ### Install via agent prompt
 
 If you're using Claude Code, paste this into the chat and the agent will handle the rest:
 
-> "Install the Rubrik MCP from `https://github.com/rubrikinc/rubrik-mcp` and add it to my Claude Code MCP configuration. My RSC service account JSON is at `~/.rsc/service_account.json`."
+> "Add the Rubrik MCP server (PyPI package `rubrik-mcp`, run it with `uvx rubrik-mcp`) to my Claude Code MCP configuration. My RSC service account JSON is at `~/.rsc/service_account.json`."
 
 For Claude Desktop:
 
-> "Install the Rubrik MCP from `https://github.com/rubrikinc/rubrik-mcp` and add it to my Claude Desktop config. My RSC service account JSON is at `~/.rsc/service_account.json`."
+> "Add the Rubrik MCP server (PyPI package `rubrik-mcp`, run it with `uvx rubrik-mcp`) to my Claude Desktop config. My RSC service account JSON is at `~/.rsc/service_account.json`."
 
 ### Install manually
+
+**Using uvx (recommended):** there is nothing to install separately. `uvx rubrik-mcp` downloads the package from PyPI into a cached, isolated environment and runs it. Use it directly as the command in your client configuration below. To pin a specific release, use `rubrik-mcp@<version>`, for example `uvx rubrik-mcp@0.8.20260914`.
 
 **Using pip:**
 
 ```bash
-pip install git+https://github.com/rubrikinc/rubrik-mcp.git
+pip install rubrik-mcp
 ```
 
-**Using uv:**
+Note the full path to the installed command. You will use it in place of `uvx rubrik-mcp` in the client configuration:
 
 ```bash
-uv pip install git+https://github.com/rubrikinc/rubrik-mcp.git
-```
-
-Note the full path to the installed command — you will need it for client configuration:
-
-```bash
-which rubrik
-# example: /Users/you/.venv/bin/rubrik
+which rubrik-mcp
+# example: /Users/you/.venv/bin/rubrik-mcp
 ```
 
 ### Hardened install (optional)
 
-The commands above install the pinned dependency set. For environments that require **install-time hash verification** — each package checked against a known-good cryptographic hash before it is installed — a hashed `requirements.txt` is published with each release. Install the verified dependency set first, then the package itself:
+For environments that require **install-time hash verification** (each package checked against a known-good cryptographic hash before it is installed), a hashed `requirements.txt` is published in this repository for each release. Install the verified dependency set first, then the package itself:
 
 ```bash
 pip install --require-hashes -r requirements.txt
 pip install --no-deps rubrik-mcp
 ```
 
-`requirements.txt` is generated from the locked, hash-pinned dependency set (`uv export`); `--require-hashes` makes pip refuse any package whose hash does not match, and `--no-deps` on the second step keeps the verified set untouched. This path is optional — the standard install above is sufficient for most users.
+`requirements.txt` is generated from the locked, hash-pinned dependency set (`uv export`); `--require-hashes` makes pip refuse any package whose hash does not match, and `--no-deps` on the second step keeps the verified set untouched. Then configure your client with the full path to `rubrik-mcp`, as in the pip instructions above. This path is optional; the standard install is sufficient for most users.
 
 ### Configure your MCP client
 
 **Claude Code:**
 
 ```bash
-claude mcp add rubrik -- /path/to/rubrik -e RSC_SERVICE_ACCOUNT_FILE=/path/to/service_account.json
+claude mcp add rubrik -e RSC_SERVICE_ACCOUNT_FILE=/path/to/service_account.json -- uvx rubrik-mcp
 ```
+
+Options such as `-e` go before `--`; everything after `--` is the command that launches the server. For discovery-only usage, omit the `-e` option.
 
 Verify it's registered:
 
@@ -146,13 +144,14 @@ Verify it's registered:
 claude mcp list
 ```
 
-**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**Claude Desktop:** edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "rubrik": {
-      "command": "/path/to/rubrik",
+      "command": "uvx",
+      "args": ["rubrik-mcp"],
       "env": {
         "RSC_SERVICE_ACCOUNT_FILE": "/path/to/service_account.json"
       }
@@ -161,18 +160,23 @@ claude mcp list
 }
 ```
 
+Desktop apps don't always inherit your shell's `PATH`. If Claude Desktop reports that it can't find `uvx`, replace `"uvx"` with its full path from `which uvx` (for example `/Users/you/.local/bin/uvx`).
+
 **Other MCP clients (generic stdio):**
 
 ```json
 {
   "name": "rubrik",
   "transport": "stdio",
-  "command": "/path/to/rubrik",
+  "command": "uvx",
+  "args": ["rubrik-mcp"],
   "env": {
     "RSC_SERVICE_ACCOUNT_FILE": "/path/to/service_account.json"
   }
 }
 ```
+
+If you installed with pip, set `"command"` to the full path of `rubrik-mcp` and drop `"args"`.
 
 ---
 
