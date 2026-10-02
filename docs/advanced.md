@@ -152,6 +152,19 @@ This is a startup configuration control, not a tamper-proof boundary — for a h
 
 ---
 
+## Update check
+
+Each rubrik-mcp release bundles a schema index built from one RSC version, and RSC tenants upgrade on a rolling schedule. At startup the server compares the index date with the connected tenant's `deploymentVersion`:
+
+- **In sync, or the index is newer than the tenant:** no notice. If a call fails because an operation or field doesn't exist yet on the tenant, the response includes an `index_note` explaining that.
+- **The index is older than the tenant:** the server asks PyPI which releases exist and picks the newest one built for the tenant's RSC version or earlier. Releases built for a newer RSC version than the tenant runs are never suggested. If a matching release exists, the server adds an update notice, including the exact command for your install method, to the instructions your MCP client receives, so your assistant can tell you. Discovery tools also add an `index_note` when a lookup misses.
+
+The PyPI response is cached for 24 hours in `update-check.json` in the config directory. If PyPI can't be reached, the server uses the cached answer or skips the check. Set `RUBRIK_MCP_NO_UPDATE_CHECK=1` to turn off the PyPI lookup. The comparison with the tenant still runs.
+
+After updating, restart your MCP client. The running server can't replace itself.
+
+---
+
 ## Community workflows
 
 Additional workflows contributed by the community — threat feed management, SLA operations, compliance reporting, and more — are available in the [rubrik-community](https://github.com/rubrikinc/rubrik-community) repository.

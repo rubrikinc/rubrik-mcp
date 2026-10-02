@@ -60,7 +60,7 @@ try:
 except ImportError:
     _SEARCH_TYPES_AVAILABLE = False
 
-from rubrik import policy
+from rubrik import policy, version_check
 
 # ---------------------------------------------------------------------------
 # Audit logging
@@ -299,6 +299,13 @@ _TOOL_REGISTRY: dict[str, Any] = {}
 # (FastMCP silently keeps the existing tool on duplicate registration, which would
 # make the save look successful while the new workflow never becomes callable).
 _BUILTIN_TOOL_NAMES: set[str] = set()
+
+# Index-vs-tenant comparison computed once at startup by _check_schema_sync.
+# None when the check failed or has not run (discovery-only use, no credentials).
+_SYNC_STATUS: version_check.SyncStatus | None = None
+# rsc_search_schema attaches the index-behind note once per session, plus on any
+# search that returns nothing, so it explains misses without repeating every call.
+_SEARCH_NOTE_SENT = False
 
 _BASE_INSTRUCTIONS = (
     "You are connected to the Rubrik Security Cloud (RSC) GraphQL API. "
@@ -671,7 +678,14 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
                         seen[name] = {**op, "source": "types"}
 
     results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:10]
-    return {"operations": results, "search": search}
+    response: dict[str, Any] = {"operations": results, "search": search}
+
+    global _SEARCH_NOTE_SENT
+    note = version_check.index_behind_note(_SYNC_STATUS) if _SYNC_STATUS else None
+    if note and (not results or not _SEARCH_NOTE_SENT):
+        response["index_note"] = note
+        _SEARCH_NOTE_SENT = True
+    return response
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
@@ -717,7 +731,13 @@ def rsc_describe_operation_full(name: str, operation_type: str, depth: int = 2) 
             accessible via "... on TypeName { field }" inline fragments in
             your query; they cannot be queried directly on the interface.
     """
-    op = describe_operation(name, operation_type)
+    try:
+        op = describe_operation(name, operation_type)
+    except ValueError as exc:
+        note = version_check.index_behind_note(_SYNC_STATUS) if _SYNC_STATUS else None
+        if note:
+            raise ValueError(f"{exc} {note}") from exc
+        raise
 
     expanded: dict[str, Any] = {}
 
@@ -1852,7 +1872,24 @@ def rsc_execute_operation(
     if hasattr(result, "__class__") and result.__class__.__name__ != "dict":
         result = json.loads(json.dumps(dict(result)))
 
+    note = version_check.index_ahead_note(_SYNC_STATUS) if _SYNC_STATUS else None
+    if note and _has_unknown_schema_error(result):
+        result["index_note"] = note
     return result
+
+
+# GraphQL validation errors for a field, argument, or type the server's schema
+# doesn't have. With an index newer than the tenant, these usually mean the
+# operation was added to RSC after the tenant's version.
+_UNKNOWN_SCHEMA_ERROR_RE = re.compile(r"Cannot query field|Unknown (argument|type)", re.IGNORECASE)
+
+
+def _has_unknown_schema_error(result: Any) -> bool:
+    errors = result.get("errors") if isinstance(result, dict) else None
+    return any(
+        _UNKNOWN_SCHEMA_ERROR_RE.search(str(e.get("message", "") if isinstance(e, dict) else e))
+        for e in errors or []
+    )
 
 
 # Read/query tools available to the workflow engine unconditionally. Write tools
@@ -2096,35 +2133,46 @@ def job_monitor_main():
 
 
 def _check_schema_sync() -> None:
-    """Compare rsc-client index version against live RSC deployment version."""
-    import re as _re
+    """Compare the rsc-client index against the live RSC deployment version.
+
+    Stores the result for the discovery tools and, when a matching release is
+    available, appends a notice to the server instructions. Instructions are
+    read when the client initializes, which happens after main() calls this,
+    so the agent sees the notice; stderr alone reaches no one on stdio.
+    """
+    global _SYNC_STATUS
     try:
         index_date = field_index_schema_version()  # YYYYMMDD
-        client = _mcp_rsc_client()
-        raw = client.execute("query { deploymentVersion }")
+        raw = _mcp_rsc_client().execute("query { deploymentVersion }")
         deployment = (raw.get("data") or {}).get("deploymentVersion", "")
-        # deploymentVersion is e.g. "v20260518-53" — extract the date portion
-        m = _re.search(r'v(\d{8})', deployment)
-        if not m:
-            print(f"[rubrik] rsc-client index: {index_date} | RSC deployment version unknown", file=sys.stderr, flush=True)
-            return
-        rsc_date = m.group(1)
-        if rsc_date == index_date:
-            print(f"[rubrik] RSC {deployment} | index {index_date} ✓ in sync", file=sys.stderr, flush=True)
-        elif rsc_date < index_date:
-            print(
-                f"[rubrik] RSC {deployment} | index {index_date} — "
-                f"index is newer than your RSC instance; some indexed operations may not exist yet",
-                file=sys.stderr, flush=True,
-            )
-        else:
-            print(
-                f"[rubrik] RSC {deployment} | index {index_date} — "
-                f"index may be missing new operations; run: pip install --upgrade rsc-client",
-                file=sys.stderr, flush=True,
-            )
+        status = version_check.compute_status(index_date, deployment)
     except Exception as exc:
         print(f"[rubrik] schema sync check failed: {exc}", file=sys.stderr, flush=True)
+        return
+    _SYNC_STATUS = status
+
+    summary = f"[rubrik] RSC {status.tenant_version or 'unknown'} | index {status.index_date}"
+    if status.state == version_check.IN_SYNC:
+        print(f"{summary} in sync", file=sys.stderr, flush=True)
+    elif status.state == version_check.UPDATE_AVAILABLE:
+        print(
+            f"{summary}: index is behind; rubrik-mcp {status.target_version} matches. "
+            f"{status.update_command}",
+            file=sys.stderr, flush=True,
+        )
+    elif status.state == version_check.AWAITING_RELEASE:
+        print(f"{summary}: index is behind; no matching release published yet", file=sys.stderr, flush=True)
+    elif status.state == version_check.INDEX_AHEAD:
+        print(
+            f"{summary}: index is newer than this tenant; some indexed operations may not exist yet",
+            file=sys.stderr, flush=True,
+        )
+    else:
+        print(f"{summary}: tenant schema date unknown", file=sys.stderr, flush=True)
+
+    notice = version_check.instructions_notice(status)
+    if notice:
+        mcp._mcp_server.instructions = (mcp._mcp_server.instructions or "") + notice
 
 
 def _writes_disabled_message(pol: policy.Policy) -> str:
