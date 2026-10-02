@@ -102,7 +102,7 @@ For Claude Desktop:
 
 ### Install manually
 
-**Using uvx (recommended):** there is nothing to install separately. `uvx rubrik-mcp` downloads the package from PyPI into a cached, isolated environment and runs it. Use it directly as the command in your client configuration below. To pin a specific release, use `rubrik-mcp@<version>`, for example `uvx rubrik-mcp@0.8.20260914`.
+**Using uvx (recommended):** there is nothing to install separately. `uvx rubrik-mcp` downloads the package from PyPI into a cached, isolated environment and runs it. Use it directly as the command in your client configuration below. To pin a specific release, use `rubrik-mcp@<version>`, for example `uvx rubrik-mcp@0.8.20260928`.
 
 **Using pip:**
 

@@ -489,9 +489,12 @@ def test_parser_isolates_root_field_across_50_real_schema_queries():
     random.seed(1337)  # fixed seed -> reproducible in CI
     sample = random.sample(names, 50)
 
-    for name in sample:
+    def argblock_for(name):
         arg_names = list((describe_operation(name, "query").get("args") or {}).keys())
-        argblock = f"({_render_args(arg_names)})" if arg_names else ""
+        return f"({_render_args(arg_names)})" if arg_names else ""
+
+    for name in sample:
+        argblock = argblock_for(name)
 
         # (a) plain, (b) with an adversarial arg block, (c) aliased — all must
         # extract exactly the single root field name and nothing from the args.
@@ -507,8 +510,7 @@ def test_parser_isolates_root_field_across_50_real_schema_queries():
 
     # Two root fields with adversarial args on both are both isolated, in order.
     a, b = random.sample(names, 2)
-    aa = f"({_render_args(list((describe_operation(a, 'query').get('args') or {}).keys()))})"
-    bb = f"({_render_args(list((describe_operation(b, 'query').get('args') or {}).keys()))})"
+    aa, bb = argblock_for(a), argblock_for(b)
     assert server._root_query_fields(
         f"query {{ {a}{aa} {{ __typename }} {b}{bb} {{ __typename }} }}"
     ) == [a, b]

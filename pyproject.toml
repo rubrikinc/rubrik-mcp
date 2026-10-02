@@ -33,7 +33,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]==1.29.0",
-    "rsc-client==1.7.20260914",
+    "rsc-client==1.7.20260928",
 ]
 
 # A dependency group, not an extra: groups are never written to the published

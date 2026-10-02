@@ -740,9 +740,9 @@ rpds-py==0.30.0 \
     # via
     #   jsonschema
     #   referencing
-rsc-client==1.7.20260914 \
-    --hash=sha256:2cd6e0ecc033192f8e4e8d27112f279e2464ce71f4f944a9a314b516ae084e4a \
-    --hash=sha256:e99f4fe5950021e29ceb69ca8194e861b995c26da2a2dd9d25cd6b30583bf476
+rsc-client==1.7.20260928 \
+    --hash=sha256:39fe05bf4d502ae0d18523a27e5689621579e7e1f8c5e7612dff009d4cb1b23a \
+    --hash=sha256:a222ecd806a1e14b4c671ed5ed7a08f29201d1d3ba258022cff40c564c03f132
     # via rubrik-mcp
 sgqlc==18 \
     --hash=sha256:7af53b5c1aab4602a98a36d6d32bd641e33f602b9b72468885f2505c59c536af \
