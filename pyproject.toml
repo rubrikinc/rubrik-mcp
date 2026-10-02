@@ -52,8 +52,12 @@ constraint-dependencies = [
     # CVE-2026-63374, CVE-2026-64847 (fixed in 4.14.2). Reaches us via httpx,
     # mcp, starlette, and sse-starlette; mcp itself only requires anyio>=4.5.
     "anyio==4.15.1",
-    # CVE-2026-102274 (fixed in 2.14.0). Reaches us via mcp.
-    "pyjwt==2.14.0",
+    # CVE-2026-102274 (fixed in 2.14.0), PYSEC-2026-4141 (fixed in 2.15.0).
+    # Reaches us via mcp.
+    "pyjwt==2.15.0",
+    # PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177 (fixed in 2.8.0).
+    # Reaches us via requests.
+    "urllib3==2.8.0",
 ]
 
 [project.urls]
