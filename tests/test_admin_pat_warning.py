@@ -67,6 +67,14 @@ def test_non_admin_pat_no_warning(user):
     assert server.mcp._mcp_server.instructions == original
 
 
+def test_admin_pat_appends_to_existing_instructions():
+    server.mcp._mcp_server.instructions = "base text\n\nnotice from another check"
+    _run_check(PAT_URI, _user([{"id": ADMIN, "isOrgAdmin": False}]))
+    instructions = server.mcp._mcp_server.instructions
+    assert instructions.startswith("base text\n\nnotice from another check")
+    assert server._ADMIN_PAT_WARNING in instructions
+
+
 def test_service_account_skips_query():
     client = _run_check(SA_URI, _user([{"id": ADMIN, "isOrgAdmin": False}]))
     client.execute.assert_not_called()

@@ -119,6 +119,8 @@ _pending_admin_pat_warning: str | None = None
 
 def _attach_admin_pat_warning(result: Any) -> Any:
     global _pending_admin_pat_warning
+    # Non-dict results (e.g. a list from rsc_list_workflows) have nowhere to carry
+    # the field, so the warning waits for the next dict result.
     if _pending_admin_pat_warning is None or not isinstance(result, dict):
         return result
     warning, _pending_admin_pat_warning = _pending_admin_pat_warning, None
@@ -2204,8 +2206,9 @@ def _check_admin_pat() -> None:
         "message": _ADMIN_PAT_WARNING,
     }))
     _pending_admin_pat_warning = _ADMIN_PAT_WARNING
-    mcp._mcp_server.instructions = (
-        f"{_BASE_INSTRUCTIONS}\n\nIMPORTANT: {_ADMIN_PAT_WARNING} "
+    # Append rather than assign: other startup checks also add notices here.
+    mcp._mcp_server.instructions = (mcp._mcp_server.instructions or "") + (
+        f"\n\nIMPORTANT: {_ADMIN_PAT_WARNING} "
         "Mention this to the user once, early in the conversation."
     )
 
