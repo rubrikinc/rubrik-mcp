@@ -32,7 +32,7 @@ classifiers = [
   "Topic :: System :: Archiving :: Backup",
 ]
 dependencies = [
-    "mcp[cli]==1.29.0",
+    "mcp[cli]==1.30.0",
     "rsc-client==1.7.20260928",
 ]
 
