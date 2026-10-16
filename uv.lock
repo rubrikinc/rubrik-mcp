@@ -1080,7 +1080,7 @@ wheels = [
 
 [[package]]
 name = "rsc-client"
-version = "1.7.20260928"
+version = "1.8.20260928"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1089,9 +1089,9 @@ dependencies = [
     { name = "sgqlc" },
     { name = "snowballstemmer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/be/0f/4fbd3844a6719969c68dad0b5a8dfc549890b3ff3a275816a2ac591e3066/rsc_client-1.7.20260928.tar.gz", hash = "sha256:39fe05bf4d502ae0d18523a27e5689621579e7e1f8c5e7612dff009d4cb1b23a", size = 3813179, upload-time = "2026-10-02T17:37:30.169Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/79/407ae7fb59a0eba5c7ca1690cfaeb7a2cf802bcfca9c34bf82c0d8119941/rsc_client-1.8.20260928.tar.gz", hash = "sha256:7f9c29eb5531891004c240821ecaf71b634dcbcb73aa235a89056768ba659802", size = 3814277, upload-time = "2026-10-16T14:31:10.675Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/9a/2b6035f1fa2241f65aa4e4dfaf0c2c54af820d9cd7336da9aedb4af33946/rsc_client-1.7.20260928-py3-none-any.whl", hash = "sha256:a222ecd806a1e14b4c671ed5ed7a08f29201d1d3ba258022cff40c564c03f132", size = 2693366, upload-time = "2026-10-02T17:37:28.282Z" },
+    { url = "https://files.pythonhosted.org/packages/25/7f/2d2c698174822e9db0fc44c5709b151f37fa88f600c4ab74ca1ad7a78a12/rsc_client-1.8.20260928-py3-none-any.whl", hash = "sha256:133016088c99f9ab3ded794fc6f6ae90a20e02a8822ed7a005e08e7a3db046f7", size = 2693773, upload-time = "2026-10-16T14:31:08.901Z" },
 ]
 
 [[package]]
@@ -1110,7 +1110,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = "==1.30.0" },
-    { name = "rsc-client", specifier = "==1.7.20260928" },
+    { name = "rsc-client", specifier = "==1.8.20260928" },
 ]
 
 [package.metadata.requires-dev]
