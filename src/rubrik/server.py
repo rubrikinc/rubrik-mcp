@@ -98,6 +98,40 @@ logger = logging.getLogger(__name__)
 audit_logger = _setup_audit_logger()
 
 
+_ADMIN_PAT_WARNING = (
+    "This Rubrik MCP server is authenticated with a personal access token for an "
+    "administrator account. Rather than using an administrator's personal access token, "
+    "consider creating a local user or service account with a more limited access scope."
+)
+
+# Built-in RSC role IDs, fixed across tenants: Administrator, Owner and Read-only
+# Administrator. Matched by ID because role names can be renamed.
+_ADMIN_ROLE_IDS = frozenset({
+    "00000000-0000-0000-0000-000000000000",
+    "00000000-0000-0000-0000-000000000009",
+    "00000000-0000-0000-0000-000000000017",
+})
+
+# Set by _check_admin_pat() at startup; delivered once on the first tool result so
+# the AI client can show it to the user, who usually never sees stderr.
+_pending_admin_pat_warning: str | None = None
+
+
+def _attach_admin_pat_warning(result: Any) -> Any:
+    global _pending_admin_pat_warning
+    # Non-dict results (e.g. a list from rsc_list_workflows) have nowhere to carry
+    # the field, so the warning waits for the next dict result.
+    if _pending_admin_pat_warning is None or not isinstance(result, dict):
+        return result
+    warning, _pending_admin_pat_warning = _pending_admin_pat_warning, None
+    return {
+        "_warning": (
+            f"{warning} Tell the user about this before presenting the result below."
+        ),
+        **result,
+    }
+
+
 def audit_tool(func):
     """Decorator that records per-invocation timing and status to the audit log."""
     def _emit(name: str, status: str, start: float) -> None:
@@ -115,7 +149,7 @@ def audit_tool(func):
             start = time.monotonic()
             status = "ok"
             try:
-                return await func(*args, **kwargs)
+                return _attach_admin_pat_warning(await func(*args, **kwargs))
             except Exception:
                 status = "error"
                 raise
@@ -128,7 +162,7 @@ def audit_tool(func):
             start = time.monotonic()
             status = "ok"
             try:
-                return func(*args, **kwargs)
+                return _attach_admin_pat_warning(func(*args, **kwargs))
             except Exception:
                 status = "error"
                 raise
@@ -2127,6 +2161,58 @@ def _check_schema_sync() -> None:
         print(f"[rubrik] schema sync check failed: {exc}", file=sys.stderr, flush=True)
 
 
+def _is_personal_access_token() -> bool:
+    """True when the configured credential logs in through RSC's PAT endpoint."""
+    from urllib.parse import urlparse
+
+    from rsc.config import load_config
+
+    token_uri = load_config().token_uri or ""
+    return urlparse(token_uri).path.rstrip("/").endswith("/api/pat_login")
+
+
+def _is_admin_user(current_user: dict) -> bool:
+    if current_user.get("isAccountOwner"):
+        return True
+    for role in current_user.get("roles") or []:
+        if role.get("id") in _ADMIN_ROLE_IDS or role.get("isOrgAdmin"):
+            return True
+    return False
+
+
+def _check_admin_pat() -> None:
+    """Warn when the server runs on an administrator's personal access token.
+
+    Never blocks startup: any failure is logged and the server continues.
+    """
+    global _pending_admin_pat_warning
+    try:
+        if not _is_personal_access_token():
+            return
+        raw = _mcp_rsc_client().execute(
+            "query { currentUser { isAccountOwner roles { id isOrgAdmin } } }"
+        )
+        current_user = (raw.get("data") or {}).get("currentUser") or {}
+        if not _is_admin_user(current_user):
+            return
+    except Exception as exc:
+        print(f"[rubrik] admin token check failed: {exc}", file=sys.stderr, flush=True)
+        return
+
+    print(f"[rubrik] WARNING: {_ADMIN_PAT_WARNING}", file=sys.stderr, flush=True)
+    audit_logger.warning(json.dumps({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": "admin_personal_access_token",
+        "message": _ADMIN_PAT_WARNING,
+    }))
+    _pending_admin_pat_warning = _ADMIN_PAT_WARNING
+    # Append rather than assign: other startup checks also add notices here.
+    mcp._mcp_server.instructions = (mcp._mcp_server.instructions or "") + (
+        f"\n\nIMPORTANT: {_ADMIN_PAT_WARNING} "
+        "Mention this to the user once, early in the conversation."
+    )
+
+
 def _writes_disabled_message(pol: policy.Policy) -> str:
     """Explain why no write tool is registered, and what to change to enable one.
 
@@ -2190,6 +2276,7 @@ def main():
     print(f"[rubrik] gating policy: {_POLICY.summary()}", file=sys.stderr, flush=True)
     _register_write_tools()
     _check_schema_sync()
+    _check_admin_pat()
     _load_workflows()
     mcp.run()
 
