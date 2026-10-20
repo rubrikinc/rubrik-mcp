@@ -1872,24 +1872,77 @@ def rsc_execute_operation(
     if hasattr(result, "__class__") and result.__class__.__name__ != "dict":
         result = json.loads(json.dumps(dict(result)))
 
-    note = version_check.index_ahead_note(_SYNC_STATUS) if _SYNC_STATUS else None
-    if note and _has_unknown_schema_error(result):
-        result["index_note"] = note
+    if _SYNC_STATUS and _SYNC_STATUS.state == version_check.INDEX_AHEAD:
+        note = version_check.index_ahead_note(_SYNC_STATUS, _indexed_unknown_names(result))
+        if note:
+            result["index_note"] = note
     return result
 
 
-# GraphQL validation errors for a field, argument, or type the server's schema
-# doesn't have. With an index newer than the tenant, these usually mean the
-# operation was added to RSC after the tenant's version.
-_UNKNOWN_SCHEMA_ERROR_RE = re.compile(r"Cannot query field|Unknown (argument|type)", re.IGNORECASE)
+# GraphQL validation violations for schema elements the tenant doesn't have.
+# RSC returns them inside the error's HTTP body; the error message is only
+# "HTTP Error 400: Bad Request".
+_UNKNOWN_FIELD_RE = re.compile(r"Cannot query field '(\w+)' on type '(\w+)'")
+_UNKNOWN_ARG_RE = re.compile(r"Unknown argument '(\w+)' on field '(\w+)' of type '(\w+)'")
+_UNKNOWN_INPUT_FIELD_RE = re.compile(r"Field '(\w+)' is not defined by type '(\w+)'")
+_UNKNOWN_TYPE_RE = re.compile(r"Unknown type '(\w+)'|cannot be non input type '(\w+)'")
+_ROOT_TYPES = {"Query": "query", "Mutation": "mutation"}
 
 
-def _has_unknown_schema_error(result: Any) -> bool:
+def _type_has_field(type_name: str, field: str) -> bool:
+    if type_name in _ROOT_TYPES:
+        try:
+            describe_operation(field, _ROOT_TYPES[type_name])
+            return True
+        except ValueError:
+            return False
+    try:
+        return field in (describe_type(type_name).get("fields") or {})
+    except ValueError:
+        return False
+
+
+def _op_has_arg(op_type: str, op_name: str, arg: str) -> bool:
+    try:
+        return arg in (describe_operation(op_name, op_type).get("args") or {})
+    except ValueError:
+        return False
+
+
+def _type_exists(type_name: str) -> bool:
+    try:
+        describe_type(type_name)
+        return True
+    except ValueError:
+        return False
+
+
+def _indexed_unknown_names(result: Any) -> list[str]:
+    """Names the tenant rejected as unknown that this MCP's index does contain.
+
+    A name missing from the index too is a typo or invention, not a version
+    gap, so it is left out and the agent gets the plain error to correct.
+    Arguments are only checked on root operations; the index doesn't record
+    arguments on nested fields.
+    """
     errors = result.get("errors") if isinstance(result, dict) else None
-    return any(
-        _UNKNOWN_SCHEMA_ERROR_RE.search(str(e.get("message", "") if isinstance(e, dict) else e))
-        for e in errors or []
-    )
+    names: list[str] = []
+    for e in errors or []:
+        text = f"{e.get('message', '')} {e.get('body', '')}" if isinstance(e, dict) else str(e)
+        for field, type_name in _UNKNOWN_FIELD_RE.findall(text):
+            if _type_has_field(type_name, field):
+                names.append(field)
+        for arg, field, type_name in _UNKNOWN_ARG_RE.findall(text):
+            if type_name in _ROOT_TYPES and _op_has_arg(_ROOT_TYPES[type_name], field, arg):
+                names.append(arg)
+        for field, type_name in _UNKNOWN_INPUT_FIELD_RE.findall(text):
+            if _type_has_field(type_name, field):
+                names.append(field)
+        for groups in _UNKNOWN_TYPE_RE.findall(text):
+            type_name = next(g for g in groups if g)
+            if _type_exists(type_name):
+                names.append(type_name)
+    return list(dict.fromkeys(names))
 
 
 # Read/query tools available to the workflow engine unconditionally. Write tools

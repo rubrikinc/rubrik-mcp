@@ -12,9 +12,10 @@ yet". The target release is the newest one whose schema date is on or before
 the tenant's, never simply the latest: a release built for a newer RSC than the
 tenant runs is not an upgrade for that tenant.
 
-Set ``RUBRIK_MCP_NO_UPDATE_CHECK=1`` to skip the PyPI lookup.
+Set ``RUBRIK_MCP_NO_UPDATE_CHECK=1`` (or ``true``/``yes``) to skip the PyPI lookup.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -35,6 +36,7 @@ CACHE_TTL = timedelta(hours=24)
 IN_SYNC = "in_sync"
 UPDATE_AVAILABLE = "update_available"   # index behind tenant, matching release published
 AWAITING_RELEASE = "awaiting_release"   # index behind tenant, no newer release published yet
+RELEASES_UNKNOWN = "releases_unknown"   # index behind tenant, release list unavailable (opt-out or offline)
 INDEX_AHEAD = "index_ahead"             # index newer than tenant
 UNKNOWN = "unknown"                     # tenant date unavailable (e.g. RSC-P version format)
 
@@ -53,7 +55,7 @@ class SyncStatus:
 
     @property
     def index_behind(self) -> bool:
-        return self.state in (UPDATE_AVAILABLE, AWAITING_RELEASE)
+        return self.state in (UPDATE_AVAILABLE, AWAITING_RELEASE, RELEASES_UNKNOWN)
 
 
 def parse_tenant_date(deployment_version: str) -> str | None:
@@ -91,13 +93,17 @@ def _parse_pypi_releases(payload: dict) -> list[str]:
     ]
 
 
+def update_check_disabled() -> bool:
+    return os.environ.get("RUBRIK_MCP_NO_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes")
+
+
 def published_versions(now: datetime | None = None) -> list[str] | None:
     """rubrik-mcp releases on PyPI, cached for a day in the config dir.
 
     Returns None when the check is disabled or PyPI can't be reached and there
     is no cached answer. Never raises.
     """
-    if os.environ.get("RUBRIK_MCP_NO_UPDATE_CHECK"):
+    if update_check_disabled():
         return None
     now = now or datetime.now(timezone.utc)
     cache_path = policy.rubrik_dir() / CACHE_FILE
@@ -128,7 +134,7 @@ def published_versions(now: datetime | None = None) -> list[str] | None:
 
 
 def install_method() -> str:
-    """How this server was installed: docker, source, uvx, uv-tool, or pip."""
+    """How this server was installed: docker, source, uvx, uv-tool, pipx, uv-venv, pip, or unknown."""
     if Path("/.dockerenv").exists():
         return "docker"
     try:
@@ -142,7 +148,18 @@ def install_method() -> str:
         # uvx runs from uv's cache (.../uv/archive-v0/<hash>); `uv tool install`
         # puts the env under .../uv/tools/rubrik-mcp.
         return "uv-tool" if "tools" in parts else "uvx"
-    return "pip"
+    if "pipx" in parts:
+        return "pipx"
+    if importlib.util.find_spec("pip") is not None:
+        return "pip"
+    # `uv venv` environments have no pip; uv records itself in pyvenv.cfg.
+    try:
+        cfg = (Path(sys.prefix) / "pyvenv.cfg").read_text()
+        if re.search(r"^uv\s*=", cfg, re.MULTILINE):
+            return "uv-venv"
+    except OSError:
+        pass
+    return "unknown"
 
 
 def update_command(version: str, method: str | None = None) -> str:
@@ -156,12 +173,18 @@ def update_command(version: str, method: str | None = None) -> str:
         )
     elif method == "uv-tool":
         step = f"Run `uv tool install --force rubrik-mcp=={version}`."
+    elif method == "pipx":
+        step = f"Run `pipx install --force rubrik-mcp=={version}`."
     elif method == "docker":
         step = f"Rebuild the rubrik-mcp image from release {version} (see docs/docker.md)."
     elif method == "source":
         step = f"Update your rubrik-mcp checkout to release {version} and reinstall it."
-    else:
+    elif method == "uv-venv":
+        step = f"Run `uv pip install --python {sys.executable} rubrik-mcp=={version}`."
+    elif method == "pip":
         step = f"Run `{sys.executable} -m pip install rubrik-mcp=={version}`."
+    else:
+        step = f"Upgrade rubrik-mcp to {version} using the tool you installed it with."
     return f"{step} Then restart your MCP client."
 
 
@@ -180,7 +203,9 @@ def compute_status(
     if tenant_date < index_date:
         return SyncStatus(INDEX_AHEAD, **base)
 
-    versions = (versions_fn or published_versions)() or []
+    versions = (versions_fn or published_versions)()
+    if versions is None:
+        return SyncStatus(RELEASES_UNKNOWN, **base)
     target = target_release(versions, tenant_date)
     if target and _release_key(target)[0] > index_date:
         return SyncStatus(
@@ -210,29 +235,41 @@ def instructions_notice(status: SyncStatus) -> str | None:
 
 
 def index_behind_note(status: SyncStatus) -> str | None:
-    """Explains a discovery miss when the index is older than the tenant."""
+    """Explains a discovery miss when the index is older than the tenant.
+
+    The index can't tell a name added after its date from a misspelled one, so
+    the note is conditional on the name being correct and never tells the
+    agent to stop.
+    """
     if not status.index_behind:
         return None
     note = (
         f"This MCP's schema index is from {_fmt(status.index_date)}; the connected "
-        f"tenant runs {status.tenant_version}. Operations added since "
-        f"{_fmt(status.index_date)} are not in the index, so a missing operation may "
-        "still exist on the tenant."
+        f"tenant runs {status.tenant_version}. If the name is spelled correctly, it may "
+        f"have been added to RSC after {_fmt(status.index_date)}, so it would be missing "
+        "from the index but still exist on the tenant."
     )
     if status.state == UPDATE_AVAILABLE:
         note += f" A matching release is available. {status.update_command}"
-    else:
+    elif status.state == AWAITING_RELEASE:
         note += " No matching rubrik-mcp release is published yet."
+    else:
+        note += " Could not check for a newer rubrik-mcp release."
     return note
 
 
-def index_ahead_note(status: SyncStatus) -> str | None:
-    """Explains an unknown-field error when the index is newer than the tenant."""
-    if status.state != INDEX_AHEAD:
+def index_ahead_note(status: SyncStatus, names: list[str]) -> str | None:
+    """Explains an unknown-schema error for names the index knows but the tenant doesn't.
+
+    Callers pass only names confirmed to exist in the index, so a misspelled or
+    invented name never gets this note and the agent can still correct itself.
+    """
+    if status.state != INDEX_AHEAD or not names:
         return None
+    listed = ", ".join(f"'{n}'" for n in names)
     return (
-        f"This MCP's schema index is from {_fmt(status.index_date)}, newer than the "
-        f"connected tenant ({status.tenant_version}). The operation or field may not "
-        "exist on this tenant yet. Do not retry it; tell the user it is not available "
-        "on their RSC version."
+        f"{listed} exists in this MCP's schema index ({_fmt(status.index_date)}), which "
+        f"is newer than the connected tenant ({status.tenant_version}). It was likely "
+        "added to RSC after the tenant's version, so it is not available on this tenant "
+        "yet. Do not retry it; tell the user it is not available on their RSC version."
     )

@@ -5,6 +5,7 @@ No network or RSC credentials required.
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -99,8 +100,15 @@ def test_status_awaiting_release_when_nothing_newer_fits():
     assert s.target_version is None
 
 
-def test_status_awaiting_release_when_pypi_unreachable():
+def test_status_releases_unknown_when_list_unavailable():
+    # Opt-out or offline with no cache: a matching release may exist, so don't claim none does.
     s = vc.compute_status("20260928", "v20261012-3", versions_fn=lambda: None)
+    assert s.state == vc.RELEASES_UNKNOWN
+    assert s.index_behind
+
+
+def test_status_awaiting_release_when_pypi_has_no_releases():
+    s = vc.compute_status("20260928", "v20261012-3", versions_fn=lambda: [])
     assert s.state == vc.AWAITING_RELEASE
 
 
@@ -111,6 +119,7 @@ UPDATE = vc.SyncStatus(
     "0.8.20261005", "Run `pip install rubrik-mcp==0.8.20261005`. Then restart your MCP client.",
 )
 AWAITING = vc.SyncStatus(vc.AWAITING_RELEASE, "20260928", "v20261012-3", "20261012")
+UNKNOWN_RELEASES = vc.SyncStatus(vc.RELEASES_UNKNOWN, "20260928", "v20261012-3", "20261012")
 AHEAD = vc.SyncStatus(vc.INDEX_AHEAD, "20261005", "v20260928-12", "20260928")
 IN_SYNC = vc.SyncStatus(vc.IN_SYNC, "20260928", "v20260928-12", "20260928")
 
@@ -118,20 +127,24 @@ IN_SYNC = vc.SyncStatus(vc.IN_SYNC, "20260928", "v20260928-12", "20260928")
 def test_instructions_notice_only_when_update_available():
     notice = vc.instructions_notice(UPDATE)
     assert "0.8.20261005" in notice and "restart your MCP client" in notice
-    for s in (AWAITING, AHEAD, IN_SYNC):
+    for s in (AWAITING, UNKNOWN_RELEASES, AHEAD, IN_SYNC):
         assert vc.instructions_notice(s) is None
 
 
 def test_index_behind_note():
     assert "A matching release is available" in vc.index_behind_note(UPDATE)
     assert "No matching rubrik-mcp release" in vc.index_behind_note(AWAITING)
+    unknown = vc.index_behind_note(UNKNOWN_RELEASES)
+    assert "Could not check" in unknown and "No matching" not in unknown
+    assert "If the name is spelled correctly" in vc.index_behind_note(AWAITING)
     assert vc.index_behind_note(AHEAD) is None
     assert vc.index_behind_note(IN_SYNC) is None
 
 
 def test_index_ahead_note():
-    assert "may not exist on this tenant" in vc.index_ahead_note(AHEAD)
-    assert vc.index_ahead_note(UPDATE) is None
+    assert "'shinyNewThing' exists in this MCP's schema index" in vc.index_ahead_note(AHEAD, ["shinyNewThing"])
+    assert vc.index_ahead_note(AHEAD, []) is None
+    assert vc.index_ahead_note(UPDATE, ["shinyNewThing"]) is None
 
 
 @pytest.mark.parametrize("method,needle", [
@@ -140,6 +153,9 @@ def test_index_ahead_note():
     ("docker", "Rebuild the rubrik-mcp image"),
     ("source", "checkout"),
     ("pip", "-m pip install rubrik-mcp==0.8.20261005"),
+    ("pipx", "pipx install --force rubrik-mcp==0.8.20261005"),
+    ("uv-venv", "uv pip install --python"),
+    ("unknown", "using the tool you installed it with"),
 ])
 def test_update_command_per_install_method(method, needle):
     cmd = vc.update_command("0.8.20261005", method)
@@ -149,8 +165,10 @@ def test_update_command_per_install_method(method, needle):
 
 def test_no_em_dashes_in_user_facing_text():
     texts = [vc.instructions_notice(UPDATE), vc.index_behind_note(UPDATE),
-             vc.index_behind_note(AWAITING), vc.index_ahead_note(AHEAD)]
-    texts += [vc.update_command("0.8.20261005", m) for m in ("uvx", "uv-tool", "docker", "source", "pip")]
+             vc.index_behind_note(AWAITING), vc.index_behind_note(UNKNOWN_RELEASES),
+             vc.index_ahead_note(AHEAD, ["x"])]
+    texts += [vc.update_command("0.8.20261005", m)
+              for m in ("uvx", "uv-tool", "pipx", "docker", "source", "uv-venv", "pip", "unknown")]
     assert not any("\u2014" in t for t in texts)
 
 
@@ -194,11 +212,60 @@ def test_published_versions_offline_without_cache(config_dir):
         assert vc.published_versions() is None
 
 
-def test_published_versions_opt_out(config_dir, monkeypatch):
-    monkeypatch.setenv("RUBRIK_MCP_NO_UPDATE_CHECK", "1")
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", " Yes "])
+def test_published_versions_opt_out(config_dir, monkeypatch, value):
+    monkeypatch.setenv("RUBRIK_MCP_NO_UPDATE_CHECK", value)
     with patch.object(vc.urllib.request, "urlopen") as op:
         assert vc.published_versions() is None
     op.assert_not_called()
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", ""])
+def test_published_versions_falsy_opt_out_still_checks(config_dir, monkeypatch, value):
+    monkeypatch.setenv("RUBRIK_MCP_NO_UPDATE_CHECK", value)
+    with patch.object(vc.urllib.request, "urlopen", return_value=_pypi_response(["0.8.20261005"])) as op:
+        assert vc.published_versions() == ["0.8.20261005"]
+    op.assert_called_once()
+
+
+# ── install_method ───────────────────────────────────────────────────────────
+
+@pytest.fixture
+def pypi_installed(monkeypatch, tmp_path):
+    """Pretend rubrik-mcp is a regular (non-editable) install under a temp prefix."""
+    dist = MagicMock()
+    dist.read_text.return_value = None
+    monkeypatch.setattr(vc, "distribution", lambda name: dist)
+    monkeypatch.setattr(vc.Path, "exists", lambda self: False if str(self) == "/.dockerenv" else Path.exists(self))
+
+    def _at(prefix: Path, has_pip: bool):
+        prefix.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(vc.sys, "prefix", str(prefix))
+        monkeypatch.setattr(vc.importlib.util, "find_spec", lambda name: object() if has_pip else None)
+        return prefix
+    return _at
+
+
+def test_install_method_pipx(pypi_installed, tmp_path):
+    pypi_installed(tmp_path / "pipx" / "venvs" / "rubrik-mcp", has_pip=True)
+    assert vc.install_method() == "pipx"
+
+
+def test_install_method_uv_venv_without_pip(pypi_installed, tmp_path):
+    prefix = pypi_installed(tmp_path / "proj" / ".venv", has_pip=False)
+    (prefix / "pyvenv.cfg").write_text("home = /x\nuv = 0.10.9\n")
+    assert vc.install_method() == "uv-venv"
+
+
+def test_install_method_unknown_without_pip(pypi_installed, tmp_path):
+    prefix = pypi_installed(tmp_path / "proj" / ".venv", has_pip=False)
+    (prefix / "pyvenv.cfg").write_text("home = /x\n")
+    assert vc.install_method() == "unknown"
+
+
+def test_install_method_pip(pypi_installed, tmp_path):
+    pypi_installed(tmp_path / "proj" / ".venv", has_pip=True)
+    assert vc.install_method() == "pip"
 
 
 # ── Server wiring ────────────────────────────────────────────────────────────
@@ -282,19 +349,64 @@ def test_describe_miss_unchanged_when_in_sync(reset_server_state, monkeypatch):
     assert "schema index" not in str(exc.value)
 
 
-def test_execute_attaches_ahead_note_on_unknown_field(reset_server_state, monkeypatch):
-    monkeypatch.setattr(server, "_SYNC_STATUS", AHEAD)
+def _rsc_400(violation: str) -> dict:
+    """An error shaped like RSC's: generic message, violation text in the HTTP body."""
+    body = json.dumps({"code": 400, "message": (
+        "[QueryAnalysisError] Query does not pass validation. Violations:\n\n"
+        f"{violation} (line 1, column 9):\nquery {{ ... }}")})
+    return {"message": "HTTP Error 400: Bad Request", "status": 400, "body": body}
+
+
+def _execute_with_error(monkeypatch, *errors):
     client = MagicMock()
-    client.execute.return_value = {
-        "data": None, "errors": [{"message": "Cannot query field 'shinyNewThing' on type 'Query'."}]}
+    client.execute.return_value = {"data": None, "errors": list(errors)}
     monkeypatch.setattr(server, "_mcp_rsc_client", lambda: client)
-    result = server.rsc_execute_operation("query { shinyNewThing { id } }")
-    assert "may not exist on this tenant" in result["index_note"]
+    return server.rsc_execute_operation("query { accountId }")
+
+
+@pytest.mark.parametrize("violation,name", [
+    ("Cannot query field 'clusterConnection' on type 'Query'.", "clusterConnection"),
+    ("Cannot query field 'name' on type 'Cluster'.", "name"),
+    ("Unknown argument 'filter' on field 'clusterConnection' of type 'Query'.", "filter"),
+    ("Field 'connectionState' is not defined by type 'ClusterFilterInput'.", "connectionState"),
+    ("Variable '$x' cannot be non input type 'ClusterFilterInput'.", "ClusterFilterInput"),
+])
+def test_execute_ahead_note_for_indexed_name(reset_server_state, monkeypatch, violation, name):
+    monkeypatch.setattr(server, "_SYNC_STATUS", AHEAD)
+    result = _execute_with_error(monkeypatch, _rsc_400(violation))
+    assert f"'{name}' exists in this MCP's schema index" in result["index_note"]
+
+
+@pytest.mark.parametrize("violation", [
+    "Cannot query field 'notARealOp' on type 'Query'.",
+    "Cannot query field 'notARealField' on type 'Cluster'.",
+    "Unknown argument 'notARealArg' on field 'clusterConnection' of type 'Query'.",
+    "Field 'notARealInputField' is not defined by type 'ClusterFilterInput'.",
+    "Variable '$x' cannot be non input type 'NotARealType'.",
+])
+def test_execute_no_ahead_note_for_typo(reset_server_state, monkeypatch, violation):
+    # Not in the index either: a typo or invented name, so the agent should correct it.
+    monkeypatch.setattr(server, "_SYNC_STATUS", AHEAD)
+    assert "index_note" not in _execute_with_error(monkeypatch, _rsc_400(violation))
+
+
+def test_execute_ahead_note_lists_only_indexed_names(reset_server_state, monkeypatch):
+    monkeypatch.setattr(server, "_SYNC_STATUS", AHEAD)
+    result = _execute_with_error(
+        monkeypatch,
+        _rsc_400("Cannot query field 'name' on type 'Cluster'."),
+        _rsc_400("Cannot query field 'notARealField' on type 'Cluster'."),
+    )
+    assert "'name'" in result["index_note"]
+    assert "notARealField" not in result["index_note"]
+
+
+def test_execute_no_ahead_note_when_in_sync(reset_server_state, monkeypatch):
+    monkeypatch.setattr(server, "_SYNC_STATUS", IN_SYNC)
+    result = _execute_with_error(monkeypatch, _rsc_400("Cannot query field 'name' on type 'Cluster'."))
+    assert "index_note" not in result
 
 
 def test_execute_no_note_on_other_errors(reset_server_state, monkeypatch):
     monkeypatch.setattr(server, "_SYNC_STATUS", AHEAD)
-    client = MagicMock()
-    client.execute.return_value = {"data": None, "errors": [{"message": "Permission denied"}]}
-    monkeypatch.setattr(server, "_mcp_rsc_client", lambda: client)
-    assert "index_note" not in server.rsc_execute_operation("query { accountId }")
+    assert "index_note" not in _execute_with_error(monkeypatch, {"message": "Permission denied"})
