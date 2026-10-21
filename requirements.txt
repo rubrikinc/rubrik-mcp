@@ -22,9 +22,9 @@ attrs==26.1.0 \
     # via
     #   jsonschema
     #   referencing
-certifi==2026.4.22 \
-    --hash=sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a \
-    --hash=sha256:8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
     #   httpcore
     #   httpx
@@ -740,9 +740,9 @@ rpds-py==0.30.0 \
     # via
     #   jsonschema
     #   referencing
-rsc-client==1.8.20260928 \
-    --hash=sha256:133016088c99f9ab3ded794fc6f6ae90a20e02a8822ed7a005e08e7a3db046f7 \
-    --hash=sha256:7f9c29eb5531891004c240821ecaf71b634dcbcb73aa235a89056768ba659802
+rsc-client==1.9.20261012 \
+    --hash=sha256:09d4bc4ae98ed93d9ba5ae26ea044c331f17dabf9bd9816a4ac36845673399a3 \
+    --hash=sha256:f9bf8ee0e747d6c8dec2c9b151fe8218bcd2d8ee01be566837a642fcc3cb2e4f
     # via rubrik-mcp
 sgqlc==18 \
     --hash=sha256:7af53b5c1aab4602a98a36d6d32bd641e33f602b9b72468885f2505c59c536af \
