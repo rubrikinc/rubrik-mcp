@@ -171,7 +171,7 @@ def test_search_schema_rejects_blank():
 
 
 def test_search_schema_dedup_and_source_tagging():
-    """ops branch wins over types branch for same op; types branch uses op name as key."""
+    """An op found by both the ops and types branches appears once, tagged with the branch where it ranked best."""
     op_a = {"name": "clusters", "type": "query", "description": "list clusters", "return_type": "ClusterConnection", "score": 0.9}
 
     def fake_search_ops(q, t):
@@ -190,7 +190,31 @@ def test_search_schema_dedup_and_source_tagging():
     ops_by_name = {o["name"]: o for o in result["operations"]}
     assert list(ops_by_name.keys()).count("clusters") == 1
     assert ops_by_name["clusters"]["source"] == "ops"
-    assert ops_by_name["clusters"]["score"] == 0.9
+    # rank 1 in both the ops and types lists
+    assert ops_by_name["clusters"]["score"] == pytest.approx(2 / 61)
+
+
+def test_search_schema_merges_by_rank_not_score():
+    """A field-branch op with a huge self-match score must not outrank the top question match."""
+    question_hit = {"name": "policyObjs", "type": "query", "description": "", "return_type": "PolicyObjConnection", "score": 4.0}
+    self_match = {"name": "downloadTurboThreatHuntCsv", "type": "query", "description": "", "return_type": "X", "score": 40.0}
+
+    def fake_search_ops(q, t):
+        if q == "dsp findings":
+            return [question_hit]
+        if q == "DownloadTurboThreatHuntResultsCsvResponse":
+            return [self_match]
+        return []
+
+    with patch.object(server, "search_operations", side_effect=fake_search_ops):
+        with patch.object(server, "search_fields", return_value=[{"type": "DownloadTurboThreatHuntResultsCsvResponse"}]):
+            with patch.object(server, "_SEARCH_TYPES_AVAILABLE", False):
+                result = server.rsc_search_schema("dsp findings")
+
+    names = [o["name"] for o in result["operations"]]
+    # Both rank 1 in their own list, so they tie; the ops list wins the tie by order, never by raw score.
+    assert names == ["policyObjs", "downloadTurboThreatHuntCsv"]
+    assert result["operations"][1]["source"] == "fields"
 
 
 def test_search_schema_field_branch_skips_empty_type():
