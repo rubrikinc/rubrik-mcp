@@ -676,7 +676,9 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     Returns:
         Dict with:
           - operations: list of dicts with name, type, description,
-            return_type, score, source (ops/fields/types)
+            return_type, score, source (ops/fields/types). `score` is a
+            fused rank score, roughly 0.016 to 0.05; it orders results
+            within one response and isn't comparable across searches.
           - search: the search string used
     """
     if not search or not search.strip():
@@ -686,7 +688,12 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     # index scores operations against the question; the field and type steps
     # reach operations through a second search on a type or operation name, so
     # their scores measure something else. Merge by rank, not score.
-    ops_list: list[dict] = list(search_operations(search, operation_type))
+    # Deduplicated by name like the other two lists, so a repeated name can't
+    # collect two rank contributions; the first (best-ranked) occurrence wins.
+    ops_list: list[dict] = []
+    for op in search_operations(search, operation_type):
+        if all(o["name"] != op["name"] for o in ops_list):
+            ops_list.append(op)
 
     # Field-level search — resolve field → type → operations
     fields_list: list[dict] = []

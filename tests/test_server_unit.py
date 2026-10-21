@@ -217,6 +217,21 @@ def test_search_schema_merges_by_rank_not_score():
     assert result["operations"][1]["source"] == "fields"
 
 
+def test_search_schema_dedupes_ops_list():
+    """A name repeated in the operation index counts once, at its best rank."""
+    dup = {"name": "dupOp", "type": "query", "description": "", "return_type": "X", "score": 5.0}
+    other = {"name": "otherOp", "type": "query", "description": "", "return_type": "Y", "score": 4.0}
+    with patch.object(server, "search_operations", return_value=[dup, other, dict(dup, score=3.0)]):
+        with patch.object(server, "search_fields", return_value=[]):
+            with patch.object(server, "_SEARCH_TYPES_AVAILABLE", False):
+                result = server.rsc_search_schema("anything")
+
+    ops = result["operations"]
+    assert [o["name"] for o in ops] == ["dupOp", "otherOp"]
+    assert ops[0]["score"] == pytest.approx(1 / (server._RRF_K + 1))
+    assert ops[1]["score"] == pytest.approx(1 / (server._RRF_K + 2))
+
+
 def test_search_schema_field_branch_skips_empty_type():
     """Field results with empty type string must not trigger downstream searches."""
     mock_search_ops = MagicMock(return_value=[])
