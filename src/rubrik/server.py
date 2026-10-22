@@ -662,8 +662,9 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     - Type index: matches domain concepts to operations via aggregate type
       vocabulary (e.g. "cluster storage runway" → Cluster type → listing ops)
 
-    Results are deduplicated and merged; the same operation may be surfaced
-    by multiple indexes and will appear once with the highest score.
+    Each index ranks operations on its own, and the lists are merged by rank
+    (reciprocal rank fusion). An operation surfaced by several indexes appears
+    once and ranks higher; `source` names the index where it ranked best.
 
     Args:
         search: Natural-language query or keywords describing what you want.
@@ -675,43 +676,47 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
     Returns:
         Dict with:
           - operations: list of dicts with name, type, description,
-            return_type, score, source (ops/fields/types)
+            return_type, score, source (ops/fields/types). `score` is a
+            fused rank score, roughly 0.014 to 0.05; it orders results
+            within one response and isn't comparable across searches.
           - search: the search string used
     """
     if not search or not search.strip():
         raise ValueError("search must not be empty — provide a meaningful query term")
 
-    seen: dict[str, dict] = {}
+    # Each index produces its own ranked list of operations. Only the operation
+    # index scores operations against the question; the field and type steps
+    # reach operations through a second search on a type or operation name, so
+    # their scores measure something else. Merge by rank, not score.
+    # Deduplicated by name like the other two lists, so a repeated name can't
+    # collect two rank contributions; the first (best-ranked) occurrence wins,
+    # and entries after a dropped duplicate each move up one rank.
+    ops_list: list[dict] = []
+    for op in search_operations(search, operation_type):
+        if all(o["name"] != op["name"] for o in ops_list):
+            ops_list.append(op)
 
-    # 1. Operation-level search
-    for r in search_operations(search, operation_type):
-        name = r["name"]
-        if name not in seen or r["score"] > seen[name]["score"]:
-            seen[name] = {**r, "source": "ops"}
-
-    # 2. Field-level search — resolve field → type → operations
+    # Field-level search — resolve field → type → operations
+    fields_list: list[dict] = []
     for fr in search_fields(search, limit=10):
         type_name = fr.get("type", "")
         if not type_name:
             continue
         for candidate in [type_name, type_name + "Connection", type_name + "Summary"]:
             for op in search_operations(candidate, operation_type):
-                name = op["name"]
-                if op["score"] > 0 and (name not in seen or op["score"] > seen[name]["score"]):
-                    seen[name] = {**op, "source": "fields"}
+                if op["score"] > 0 and all(o["name"] != op["name"] for o in fields_list):
+                    fields_list.append(op)
 
-    # 3. Type-level search (available when rsc-client >= types-bm25 version)
+    # Type-level search (available when rsc-client >= types-bm25 version)
+    types_list: list[dict] = []
     if _SEARCH_TYPES_AVAILABLE:
         for tr in _search_types(search):
             for op_name in tr.get("ops", []):
                 ops = search_operations(op_name, operation_type)
-                if ops:
-                    op = ops[0]
-                    name = op["name"]
-                    if name not in seen or op["score"] > seen[name]["score"]:
-                        seen[name] = {**op, "source": "types"}
+                if ops and all(o["name"] != ops[0]["name"] for o in types_list):
+                    types_list.append(ops[0])
 
-    results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:10]
+    results = _fuse_by_rank([("ops", ops_list), ("fields", fields_list), ("types", types_list)])[:10]
     response: dict[str, Any] = {"operations": results, "search": search}
 
     global _SEARCH_NOTE_SENT
@@ -720,6 +725,28 @@ def rsc_search_schema(search: str, operation_type: str = "all") -> dict:
         response["index_note"] = note
         _SEARCH_NOTE_SENT = True
     return response
+
+
+_RRF_K = 60  # standard reciprocal-rank-fusion constant; damps the gap between ranks 1 and 2
+
+
+def _fuse_by_rank(ranked_lists: list[tuple[str, list[dict]]]) -> list[dict]:
+    """Reciprocal rank fusion: an operation scores sum(1 / (k + rank)) over the
+    lists it appears in. `source` is the list where it ranked highest (earlier
+    lists win ties), and `score` is the fused score."""
+    fused: dict[str, dict] = {}
+    for source, ranked in ranked_lists:
+        for rank, op in enumerate(ranked, 1):
+            entry = fused.get(op["name"])
+            if entry is None:
+                fused[op["name"]] = entry = {**op, "source": source, "score": 0.0, "_best": rank}
+            elif rank < entry["_best"]:
+                entry.update(source=source, _best=rank)
+            entry["score"] += 1 / (_RRF_K + rank)
+    results = sorted(fused.values(), key=lambda x: x["score"], reverse=True)
+    for r in results:
+        del r["_best"]
+    return results
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False))
