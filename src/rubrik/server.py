@@ -239,8 +239,87 @@ def _mcp_version() -> str:
         return __version__
 
 
+_UA_TOKEN_RE = re.compile(r"[^A-Za-z0-9._+-]")
+
+
+def _ua_token(value: Any) -> str:
+    """Reduce a client-supplied string to a safe User-Agent product token."""
+    return _UA_TOKEN_RE.sub("-", str(value or "")).strip("-")[:64]
+
+
+_CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
+
+
+def _field(obj: Any, key: str) -> Any:
+    """Read a key from a dict or an attribute from a model (raw _meta values are dicts)."""
+    return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
+
+def _request_client_info(ctx) -> Any:
+    """clientInfo from the current request's _meta (protocol 2026-07-28 and later).
+
+    Newer protocol versions drop the initialize handshake and send clientInfo on
+    every request instead. The SDK keeps unknown _meta keys as model extras.
+    """
+    try:
+        meta = ctx.request_context.meta
+    except Exception:
+        return None
+    if meta is None:
+        return None
+    extras = getattr(meta, "model_extra", None) or {}
+    return extras.get(_CLIENT_INFO_META_KEY)
+
+
+def _mcp_client_app() -> str | None:
+    """The connected MCP client app as "name/version" (e.g. "claude-code/2.1.0").
+
+    Read from the clientInfo in the current request's _meta (protocol 2026-07-28+),
+    falling back to the clientInfo sent on initialize (earlier versions). The model
+    behind the client is not part of the protocol, so it is not available here.
+    Returns None outside a request (e.g. the startup sync check) or if the client
+    sent nothing.
+    """
+    try:
+        ctx = mcp.get_context()
+    except Exception:
+        return None
+    info = _request_client_info(ctx)
+    if info is None:
+        try:
+            info = getattr(ctx.session.client_params, "clientInfo", None)
+        except Exception:
+            return None
+    name = _ua_token(_field(info, "name"))
+    if not name:
+        return None
+    ver = _ua_token(_field(info, "version"))
+    return f"{name}/{ver}" if ver else name
+
+
+class _MCPRSCClient(RSCClient):
+    """RSCClient that appends the connected MCP client app to the User-Agent."""
+
+    def __init__(self, *args, client_app: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._client_app = client_app
+
+    @property
+    def endpoint(self):
+        ep = super().endpoint
+        if self._client_app:
+            ua = ep.base_headers.get("User-Agent", "")
+            ep.base_headers["User-Agent"] = f"{ua} {self._client_app}".strip()
+        return ep
+
+
 def _mcp_rsc_client() -> RSCClient:
-    """Construct an RSCClient that identifies this MCP to RSC via SDK headers."""
+    """Construct an RSCClient that identifies this MCP (and its client app) to RSC."""
+    client_app = _mcp_client_app()
+    if client_app:
+        return _MCPRSCClient(
+            product=_MCP_PRODUCT, product_version=_mcp_version(), client_app=client_app
+        )
     return RSCClient(product=_MCP_PRODUCT, product_version=_mcp_version())
 
 

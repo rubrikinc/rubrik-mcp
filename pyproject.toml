@@ -1,7 +1,7 @@
 [build-system]
 # Pinned per policy: all direct dependencies carry an exact version,
 # including the build backend.
-requires = ["hatchling==1.32.4"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -33,14 +33,14 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]==1.30.0",
-    "rsc-client==1.9.20261012",
+    "rsc-client==1.9.20261026",
 ]
 
 # A dependency group, not an extra: groups are never written to the published
 # package metadata, so this exact pin binds our CI without forcing a pytest
 # version on anyone who installs rubrik-mcp.
 [dependency-groups]
-test = ["pytest==9.1.1"]
+test = ["pytest==9.2.0"]
 
 [tool.uv]
 # Exact pins for transitive dependencies we need to control. These are
@@ -54,7 +54,10 @@ constraint-dependencies = [
     "anyio==4.15.1",
     # CVE-2026-102274 (fixed in 2.14.0), PYSEC-2026-4141 (fixed in 2.15.0).
     # Reaches us via mcp.
-    "pyjwt==2.15.0",
+    "pyjwt==2.15.1",
+    # CVE-2026-75507, CVE-2026-75508 (fixed in 3.2.12). Reaches us via
+    # rsc-client -> sgqlc, which caps graphql-core below 3.3.
+    "graphql-core==3.2.13",
     # PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177 (fixed in 2.8.0).
     # Reaches us via requests.
     "urllib3==2.8.0",
