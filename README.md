@@ -238,6 +238,7 @@ The role you assign to the service account determines what the MCP server can ac
 - Restrict which IPs can authenticate using the RSC IP allowlist at **Settings > Security > IP Allowlist**. Add only the IP or CIDR range of the machine running the MCP server.
 - Rotate client secrets on a schedule (monthly at minimum). Secrets do not expire by default. Use `chmod 600` on any file containing a `client_secret`.
 - All API activity is recorded in RSC audit logs at **Reports > Audit Logs**. Review periodically.
+- Each request to RSC identifies the MCP in its headers: `Sdk-Language: rubrik-mcp`, `Sdk-Version` set to the MCP version, and a `User-Agent` such as `rubrik-mcp/<version> (rsc-python-client/<version>; Python/<version>) claude-code/2.1.0`. The last part is the MCP client's self-reported name and version. No other client or user information is sent.
 
 ---
 

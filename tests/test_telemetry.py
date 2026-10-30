@@ -8,6 +8,8 @@ telemetry headers, without ever building a real client.
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 import rubrik.server as server
 
 
@@ -64,6 +66,40 @@ def test_client_app_meta_without_client_info_falls_back_to_initialize():
     with patch.object(server.mcp, "get_context",
                       return_value=_fake_context("claude-code", "2.1.0", meta=meta)):
         assert server._mcp_client_app() == "claude-code/2.1.0"
+
+
+@pytest.mark.parametrize("bad", [
+    "claude-code",              # string instead of an object
+    ["claude-code", "2.1.0"],   # list
+    {"name": ""},               # empty name
+    {"name": "   "},            # name that sanitizes to nothing
+    {"version": "2.1.0"},       # no name at all
+])
+def test_malformed_meta_client_info_falls_back_to_initialize(bad):
+    from mcp.types import RequestParams
+
+    meta = RequestParams.model_validate({"_meta": {
+        "io.modelcontextprotocol/clientInfo": bad,
+    }}).meta
+    with patch.object(server.mcp, "get_context",
+                      return_value=_fake_context("claude-code", "2.1.0", meta=meta)):
+        assert server._mcp_client_app() == "claude-code/2.1.0"
+
+
+def test_ua_token_caps_at_64_characters():
+    assert server._ua_token("a" * 100) == "a" * 64
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("evil\r\nX-Injected: 1", "evil--X-Injected--1"),  # no header splitting
+    ("claude\x00code", "claude-code"),                 # control characters
+    ("cläude-cöde", "cl-ude-c-de"),                    # non-ASCII
+    ("日本語", ""),                                     # nothing usable left
+])
+def test_ua_token_strips_unsafe_characters(raw, expected):
+    token = server._ua_token(raw)
+    assert token == expected
+    assert "\r" not in token and "\n" not in token and token.isascii()
 
 
 def test_client_app_none_when_no_client_info_anywhere():

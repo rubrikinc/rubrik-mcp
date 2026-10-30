@@ -284,12 +284,20 @@ def _mcp_client_app() -> str | None:
         ctx = mcp.get_context()
     except Exception:
         return None
-    info = _request_client_info(ctx)
+    # A malformed _meta value (wrong type, empty name) falls through to initialize.
+    app = _client_app_token(_request_client_info(ctx))
+    if app:
+        return app
+    try:
+        return _client_app_token(getattr(ctx.session.client_params, "clientInfo", None))
+    except Exception:
+        return None
+
+
+def _client_app_token(info: Any) -> str | None:
+    """Format a clientInfo value as "name/version", or None if it has no usable name."""
     if info is None:
-        try:
-            info = getattr(ctx.session.client_params, "clientInfo", None)
-        except Exception:
-            return None
+        return None
     name = _ua_token(_field(info, "name"))
     if not name:
         return None
