@@ -12,7 +12,8 @@ resolution-markers = [
 [manifest]
 constraints = [
     { name = "anyio", specifier = "==4.15.1" },
-    { name = "pyjwt", specifier = "==2.15.0" },
+    { name = "graphql-core", specifier = "==3.2.13" },
+    { name = "pyjwt", specifier = "==2.15.1" },
     { name = "urllib3", specifier = "==2.8.0" },
 ]
 
@@ -345,11 +346,11 @@ wheels = [
 
 [[package]]
 name = "graphql-core"
-version = "3.2.8"
+version = "3.2.13"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/68/c5/36aa96205c3ecbb3d34c7c24189e4553c7ca2ebc7e1dd07432339b980272/graphql_core-3.2.8.tar.gz", hash = "sha256:015457da5d996c924ddf57a43f4e959b0b94fb695b85ed4c29446e508ed65cf3", size = 513181, upload-time = "2026-03-05T19:55:37.332Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/5e/aa0d4e701b50db0bab71b125dd19ddb0f98c638d008d6f7e3d8ce9cbc92e/graphql_core-3.2.13.tar.gz", hash = "sha256:bb81dd266d4ab7b591bd976f1b23639d97776cb9ac1a896b4a93c271e11ed618", size = 577471, upload-time = "2026-09-27T12:22:57.136Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/41/cb887d9afc5dabd78feefe6ccbaf83ff423c206a7a1b7aeeac05120b2125/graphql_core-3.2.8-py3-none-any.whl", hash = "sha256:cbee07bee1b3ed5e531723685369039f32ff815ef60166686e0162f540f1520c", size = 207349, upload-time = "2026-03-05T19:55:35.911Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/b4/b52a324b0b297ddc49b8ea31a51d39fae63132f694a267b9381d94e2e0af/graphql_core-3.2.13-py3-none-any.whl", hash = "sha256:b0eb04f2c31556b2310a77c8fb53c74e8b56570f8fea594d89c6ef7827dbb497", size = 268191, upload-time = "2026-09-27T12:22:55.661Z" },
 ]
 
 [[package]]
@@ -828,14 +829,14 @@ wheels = [
 
 [[package]]
 name = "pyjwt"
-version = "2.15.0"
+version = "2.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/a5/5197bfd06417837ac079921c66fa6393f1dea3557272a263cebfef69e432/pyjwt-2.15.0.tar.gz", hash = "sha256:b11c5f9791d7bf51c2b39a81ed669f6b2dbbd669df2942f6c60167e9e3d1abe4", size = 120513, upload-time = "2026-09-23T16:56:00.689Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/ea/5194e52748b0da83d71e082d75496eaec6e58f419f5e184786ded517e6a9/pyjwt-2.15.1.tar.gz", hash = "sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8", size = 121252, upload-time = "2026-09-28T18:40:42.598Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/55/40e45bf052ee8ee12a4dfd785519660f8effa7b065442b91646ec6828619/pyjwt-2.15.0-py3-none-any.whl", hash = "sha256:7a3742debf6b879e912dbb9819ceec1594be812452b78c5f2e2dfc56564954f8", size = 33680, upload-time = "2026-09-23T16:55:59.241Z" },
+    { url = "https://files.pythonhosted.org/packages/50/ca/44de4e75f8aadc457f0634be3b542815078ded46dca30efb960edeecad6e/pyjwt-2.15.1-py3-none-any.whl", hash = "sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193", size = 33860, upload-time = "2026-09-28T18:40:41.429Z" },
 ]
 
 [package.optional-dependencies]
@@ -845,7 +846,7 @@ crypto = [
 
 [[package]]
 name = "pytest"
-version = "9.1.1"
+version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -856,9 +857,9 @@ dependencies = [
     { name = "pygments" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/42/bb4641652e58dedeac2ec51abc1f8cae4fee4ec63899a0999016229a0f2a/pytest-9.2.0.tar.gz", hash = "sha256:97c4f3b1f3c7414aa36465e09b8220f1d03627993bd51b1282e193753c80557b", size = 1797555, upload-time = "2026-10-27T21:30:20.728Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+    { url = "https://files.pythonhosted.org/packages/51/39/1f5d8c8877a0fa327db959c19341d4be61660de1ab6b7391f9eb805bcd67/pytest-9.2.0-py3-none-any.whl", hash = "sha256:07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588", size = 411776, upload-time = "2026-10-27T21:30:19.131Z" },
 ]
 
 [[package]]
@@ -1080,7 +1081,7 @@ wheels = [
 
 [[package]]
 name = "rsc-client"
-version = "1.9.20261012"
+version = "1.9.20261026"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1089,9 +1090,9 @@ dependencies = [
     { name = "sgqlc" },
     { name = "snowballstemmer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/b0/a2ed7f1c34562ba43bf27e8bc7d3ad6335791232a3471cf0f3f614228ff0/rsc_client-1.9.20261012.tar.gz", hash = "sha256:09d4bc4ae98ed93d9ba5ae26ea044c331f17dabf9bd9816a4ac36845673399a3", size = 4975804, upload-time = "2026-10-21T20:40:27.212Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/92/96df45516af9263c0557acc314e547a63a040c9824de43c67b01eb17a65b/rsc_client-1.9.20261026.tar.gz", hash = "sha256:965069eff0956b028365d29869e096eaf73c0eea82d0304b971fb3b6aa4b4434", size = 6232266, upload-time = "2026-10-30T19:54:32.404Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/41/42/84a442d4f80ecb407d27dd52ad2b4278d417a95a0ed19cdb4e041ee77b21/rsc_client-1.9.20261012-py3-none-any.whl", hash = "sha256:f9bf8ee0e747d6c8dec2c9b151fe8218bcd2d8ee01be566837a642fcc3cb2e4f", size = 2725822, upload-time = "2026-10-21T20:40:25.298Z" },
+    { url = "https://files.pythonhosted.org/packages/37/51/7ed8d18ab12e94e6ace54a2d772a3eaa9115d98a6dd7339aeb519bb8c8cb/rsc_client-1.9.20261026-py3-none-any.whl", hash = "sha256:12f7279d545ada72c5cb6a705fbcda8631a3e7474c86c084cafd34910588ccda", size = 2815012, upload-time = "2026-10-30T19:54:30.687Z" },
 ]
 
 [[package]]
@@ -1110,11 +1111,11 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = "==1.30.0" },
-    { name = "rsc-client", specifier = "==1.9.20261012" },
+    { name = "rsc-client", specifier = "==1.9.20261026" },
 ]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = "==9.1.1" }]
+test = [{ name = "pytest", specifier = "==9.2.0" }]
 
 [[package]]
 name = "sgqlc"
