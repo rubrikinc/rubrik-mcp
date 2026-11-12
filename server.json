@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://developer.rubrik.com",
-  "version": "0.11.20261026",
+  "version": "0.11.20261102",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "rubrik-mcp",
-      "version": "0.11.20261026",
+      "version": "0.11.20261102",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
