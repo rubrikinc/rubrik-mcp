@@ -93,6 +93,13 @@ def test_poll_once_cloud_native_maps_terminal_state():
     assert result["status"] == "SUCCEEDED"
     assert result["done"] is True
 
+@pytest.mark.parametrize("object_type", ["S3_TABLES_ICEBERG_TABLE", "GLUE_ICEBERG_TABLE"])
+def test_poll_once_iceberg_points_to_get_events(object_type):
+    client = MagicMock()
+    with pytest.raises(ValueError, match="activitySeriesConnection"):
+        server._poll_once(client, "tc-1", object_type, None)
+    client.execute.assert_not_called()
+
 
 # ── 6. Workflow loader + executor ────────────────────────────────────────────
 
@@ -297,6 +304,31 @@ def test_take_on_demand_snapshot_cloud_native_has_no_cluster_id():
     with patch.object(server, "RSCClient", return_value=inst):
         result = server.rsc_take_on_demand_snapshot(workload_id="vm-fid", object_type="AzureNativeVm")
     assert "cluster_id" not in result
+
+@pytest.mark.parametrize("object_type,mutation_name", [
+    ("S3_TABLES_ICEBERG_TABLE", "createOnDemandS3TablesIcebergTableBackup"),
+    ("GLUE_ICEBERG_TABLE", "createOnDemandGlueIcebergTableBackup"),
+])
+def test_take_on_demand_snapshot_iceberg(object_type, mutation_name):
+    inst = MagicMock()
+    inst.execute.return_value = {"data": {mutation_name: {"taskchainUuid": "tc-uuid"}}}
+    with patch.object(server, "RSCClient", return_value=inst):
+        result = server.rsc_take_on_demand_snapshot(workload_id="table-fid", object_type=object_type)
+    query = inst.execute.call_args.args[0]
+    input_type = mutation_name[0].upper() + mutation_name[1:] + "Input"
+    assert f"$input: {input_type}!" in query
+    assert f"{mutation_name}(input: $input)" in query
+    assert inst.execute.call_args.kwargs["variables"] == {"input": {"sourceTableId": "table-fid"}}
+    assert result == {"taskchainUuid": "tc-uuid"}
+
+def test_take_on_demand_snapshot_iceberg_passes_retention_sla():
+    inst = MagicMock()
+    inst.execute.return_value = {"data": {"createOnDemandGlueIcebergTableBackup": {"taskchainUuid": "tc"}}}
+    with patch.object(server, "RSCClient", return_value=inst):
+        server.rsc_take_on_demand_snapshot(
+            workload_id="table-fid", object_type="GLUE_ICEBERG_TABLE", sla_id="sla-1")
+    assert inst.execute.call_args.kwargs["variables"] == {
+        "input": {"sourceTableId": "table-fid", "retentionSlaId": "sla-1"}}
 
 def test_onboard_host_requires_cluster_uuid():
     with patch.object(server, "RSCClient"):
