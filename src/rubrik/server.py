@@ -969,6 +969,15 @@ _CLOUD_NATIVE_TYPES: set[str] = {
     "K8S_VIRTUAL_MACHINE", "KuprNamespace",
 }
 
+# Iceberg table types: each has its own on-demand backup mutation, which takes
+# {sourceTableId, retentionSlaId} and returns a taskchainUuid. RSC cannot read
+# these taskchains yet (the taskchain query returns 403), so rsc_wait_for_job
+# does not poll them. Move them to the taskchain poller when RSC fixes that.
+_ICEBERG_TYPE_MAP: dict[str, str] = {
+    "S3_TABLES_ICEBERG_TABLE": "createOnDemandS3TablesIcebergTableBackup",
+    "GLUE_ICEBERG_TABLE":      "createOnDemandGlueIcebergTableBackup",
+}
+
 # CDM types with dedicated asyncRequestStatus queries: (query_name, uses_input_wrapper)
 # uses_input_wrapper=False → positional args (clusterUuid, id); True → input:{clusterUuid, id}
 _CDM_STATUS_MAP: dict[str, tuple[str, bool]] = {
@@ -1070,6 +1079,19 @@ def _paginated_result(conn: dict, records: list, key: str) -> dict:
 
 def _poll_once(client: RSCClient, job_id: str, object_type: str, cluster_id: str | None) -> dict:
     """Single status check. Returns {status, progress, done, raw}."""
+    if object_type in _ICEBERG_TYPE_MAP:
+        raise ValueError(
+            f"rsc_wait_for_job cannot poll {object_type} jobs yet: RSC returns 403 "
+            "for Iceberg taskchains. Do not retry, and do not query taskchain or "
+            "getKorgTaskchainStatus. Check the job through activitySeriesConnection "
+            "instead: filter on objectFid = the table's fid. The activity series whose "
+            "activitySeriesId equals this job_id is the job, and its lastActivityStatus "
+            "is the job status (Success, Failure, Canceled and PARTIAL_SUCCESS are "
+            "final). rsc_get_events with workload_id = the table's fid runs this query "
+            "for you. Iceberg backups often take 15 minutes or more, so check again "
+            "later rather than in a tight loop."
+        )
+
     if object_type in _CLOUD_NATIVE_TYPES:
         q = "query PollTaskchain($id: String!) { taskchain(taskchainId: $id) { taskchainUuid state progress startTime endTime error } }"
         raw = _data_or_raise(client.execute(q, variables={"id": job_id}), "taskchain")
@@ -1292,6 +1314,9 @@ def rsc_take_on_demand_snapshot(
 
     Returns:
         For cloud-native types: taskchainUuids and any errors.
+        For Iceberg table types: taskchainUuid. rsc_wait_for_job cannot poll
+            these jobs yet; check them through activitySeriesConnection
+            (objectFid = table fid, match activitySeriesId to taskchainUuid).
         For CDM types: AsyncRequestStatus with id and status.
 
     Supported objectType values:
@@ -1303,6 +1328,7 @@ def rsc_take_on_demand_snapshot(
             AWS_NATIVE_S3_BUCKET, AWS_NATIVE_CONFIG, AZURE_AD_DIRECTORY,
             AZURE_DEVOPS_REPOSITORY, GITHUB_REPOSITORY, K8S_PROTECTION_SET,
             K8S_VIRTUAL_MACHINE, KuprNamespace.
+        Iceberg tables: S3_TABLES_ICEBERG_TABLE, GLUE_ICEBERG_TABLE.
         CDM: VmwareVirtualMachine, NutanixVirtualMachine, HypervVirtualMachine,
             Mssql, OracleDatabase, ORACLE_DATA_GUARD_GROUP, SapHanaDatabase,
             VolumeGroup, WindowsVolumeGroup, ManagedVolume, ExchangeDatabase,
@@ -1320,6 +1346,19 @@ def rsc_take_on_demand_snapshot(
         )
         raw = client.execute(mutation, variables={"input": {"workloadIds": [workload_id], "slaId": sla_id}})
         return _data_or_raise(raw, "takeOnDemandSnapshot")
+
+    if object_type in _ICEBERG_TYPE_MAP:
+        mutation_name = _ICEBERG_TYPE_MAP[object_type]
+        input_type = mutation_name[0].upper() + mutation_name[1:] + "Input"
+        mutation = (
+            f"mutation IcebergSnapshot($input: {input_type}!) {{ "
+            f"{mutation_name}(input: $input) {{ taskchainUuid }} }}"
+        )
+        iceberg_input: dict[str, Any] = {"sourceTableId": workload_id}
+        if sla_id:
+            iceberg_input["retentionSlaId"] = sla_id
+        raw = client.execute(mutation, variables={"input": iceberg_input})
+        return _data_or_raise(raw, mutation_name)
 
     if object_type in _CDM_TYPE_MAP:
         # Look up the cluster UUID before triggering so the caller has it for rsc_wait_for_job.
@@ -1355,7 +1394,7 @@ def rsc_take_on_demand_snapshot(
             result["cluster_id"] = cluster_id
         return result
 
-    supported = sorted(_CLOUD_NATIVE_TYPES | set(_CDM_TYPE_MAP))
+    supported = sorted(_CLOUD_NATIVE_TYPES | set(_ICEBERG_TYPE_MAP) | set(_CDM_TYPE_MAP))
     raise ValueError(
         f"Unsupported objectType '{object_type}'. "
         f"Use rsc_execute_operation for this type. "
@@ -1895,6 +1934,10 @@ How to get job_id and cluster_id:
   - Cloud-native workloads: job_id = `taskchainUuid` from
     `taskchainUuids[0].taskchainUuid` in the mutation response.
     cluster_id is not needed.
+  - Iceberg tables (S3_TABLES_ICEBERG_TABLE, GLUE_ICEBERG_TABLE): not
+    supported yet. Check the job through activitySeriesConnection (filter
+    objectFid = the table fid, or use rsc_get_events with workload_id); the
+    activity series whose activitySeriesId equals the `taskchainUuid` is the job.
 
 For background monitoring without blocking, run rsc-job-monitor via
 the Bash tool and watch it with the Monitor tool:
